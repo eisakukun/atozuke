@@ -372,7 +372,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.3";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.3.1";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 const PH="（ここに書く）";              // 未記入あつかいの文字
@@ -840,7 +840,7 @@ ED_EVENTS.keydown=function(ev){
   if(ev.altKey&&!ev.metaKey&&!ev.ctrlKey&&/^Digit[0-9]$/.test(ev.code)){   /* ⌥1〜9＝意味を貼る ⌥0＝まだ */
     ev.preventDefault();
     const rid=roleByDigit(+ev.code.slice(5));
-    if(rid!==undefined)setRole(ed.id,rid);
+    if(rid!==undefined){setRole(ed.id,rid);hideEdbar();}
   }
 };
 ED_EVENTS.beforeinput=function(ev){                           /* キーの来ないキーボード（iPhoneなど）の改行キー */
@@ -871,6 +871,7 @@ function renderEdbar(){
       (i<9?"<b>⌥"+(i+1)+"</b>":"")+'<span style="color:'+r.color+'">'+esc(r.icon)+'</span>'+esc(r.name)+'</span>';
   }).join("")+'<span class="eb'+(n.role?"":" on")+'" data-k="__none"><b>⌥0</b>— まだ</span>';
 }
+function hideEdbar(){edbar.classList.remove("open");}
 function docked(){return matchMedia("(max-width:760px), (pointer:coarse)").matches;}
 function placeEdbar(){
   if(!ed)return;
@@ -915,7 +916,7 @@ function edbarAct(e){
   else if(a==="child")nextFromEdit("child");
   else if(a==="br")lineBreak();
   else if(a==="done")endEdit();
-  else if(k)setRole(ed.id,k==="__none"?null:k);
+  else if(k){setRole(ed.id,k==="__none"?null:k);hideEdbar();}   /* 意味を選んだらバーは引っ込める（書くのは続けられる） */
 }
 edbar.addEventListener("mousedown",edbarAct);
 edbar.addEventListener("touchstart",e=>e.preventDefault(),{passive:false});
@@ -924,7 +925,11 @@ edbar.addEventListener("touchend",edbarAct,{passive:false});
 document.addEventListener("pointerdown",e=>{
   if(!ed)return;
   const tg=e.target;
-  if(ed.t.contains(tg)||edbar.contains(tg))return;
+  if(ed.t.contains(tg)){                                      /* 書いている文字をもう一度押す＝引っ込めたバーを戻す */
+    if(!edbar.classList.contains("open")){renderEdbar();edbar.classList.add("open");placeEdbar();}
+    return;
+  }
+  if(edbar.contains(tg))return;
   if(tg.closest&&(tg.closest("#roleRow .rolebtn")||tg.closest(".grow")))return;
   endEdit();
 },true);
