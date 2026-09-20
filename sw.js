@@ -1,7 +1,7 @@
 /* オフラインでも開けるようにする Service Worker。
    本体は通信優先（直したら次に開いたとき反映される）、圏外ならキャッシュから起動する。
    中身（書いた札）は localStorage / IndexedDB にあり、ここでは一切さわらない。 */
-const CACHE = "atozuke-v1.8.0";
+const CACHE = "atozuke-v1.8.1";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./version.txt",
                "./icon-180.png", "./icon-192.png", "./icon-512.png"];
 
