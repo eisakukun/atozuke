@@ -427,9 +427,10 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.7.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.7.1";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
+const ZMIN=.01, ZMAX=60;                 // 拡大・縮小の幅。1が等倍。事実上どこまでも寄れる／引ける
 const PH="（ここに書く）";              // 未記入あつかいの文字
 const SEED_TEXT="思いついたことをそのまま書く";   // 最初の1枚。書き換えるまでは「未記入」扱い
 
@@ -1356,7 +1357,7 @@ function fit(){
   const wide=window.innerWidth>760,pad=90;
   const vw=Math.max(320,stage.clientWidth-((wide&&insp.classList.contains("open"))?300:0));
   const vh=Math.max(320,stage.clientHeight-(review.on?150:0));
-  const sc=Math.max(.15,Math.min(vw/(maxX-minX+pad*2),vh/(maxY-minY+pad*2),1.3));
+  const sc=Math.max(ZMIN,Math.min(vw/(maxX-minX+pad*2),vh/(maxY-minY+pad*2),1.3));
   state.view.scale=sc;
   state.view.x=(vw-(maxX+minX)*sc)/2;
   state.view.y=(vh-(maxY+minY)*sc)/2;
@@ -1476,7 +1477,7 @@ stage.addEventListener("pointermove",e=>{
     const r=stage.getBoundingClientRect();
     const mx=(a[0].x+a[1].x)/2-r.left,my=(a[0].y+a[1].y)/2-r.top;
     const d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)||1;
-    const ns=Math.min(2.5,Math.max(.15,gest.s*d/gest.d));
+    const ns=Math.min(ZMAX,Math.max(ZMIN,gest.s*d/gest.d));
     state.view.scale=ns;state.view.x=mx-gest.wx*ns;state.view.y=my-gest.wy*ns;
   }
   applyView();
@@ -1504,7 +1505,7 @@ stage.addEventListener("dblclick",e=>{
 stage.addEventListener("wheel",e=>{
   e.preventDefault();
   const r=stage.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top,old=state.view.scale;
-  const ns=Math.min(2.5,Math.max(.15,old*(e.deltaY<0?1.1:.9)));
+  const ns=Math.min(ZMAX,Math.max(ZMIN,old*(e.deltaY<0?1.1:.9)));
   state.view.x=mx-(mx-state.view.x)*(ns/old);
   state.view.y=my-(my-state.view.y)*(ns/old);
   state.view.scale=ns;applyView();save();
