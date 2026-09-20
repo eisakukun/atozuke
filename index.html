@@ -79,8 +79,8 @@
   @keyframes lkflow{to{stroke-dashoffset:-19;}}
   svg#links .lkt{fill:#ff8fd6;font-size:10px;font-family:var(--mono);text-anchor:middle;
     paint-order:stroke;stroke:#08080f;stroke-width:3px;}
-  body.linking #world .node{cursor:crosshair}
-  body.linking #world .node:hover{box-shadow:0 0 0 2px #ff2e97,0 0 22px -4px #ff2e97}
+  body.linking #world .node,body.shiftlink #world .node{cursor:crosshair}
+  body.linking #world .node:hover,body.shiftlink #world .node:hover{box-shadow:0 0 0 2px #ff2e97,0 0 22px -4px #ff2e97}
   svg#links .vwt{font-size:12px;font-family:var(--mono);paint-order:stroke;stroke:#08080f;stroke-width:4px;}
   #viewList .vrow{display:flex;gap:6px;align-items:center;margin-top:5px;cursor:default}
   #viewList .vrow input{flex:1;min-width:0;font-size:11.5px;padding:3px 6px}
@@ -262,7 +262,7 @@
   <button id="redoBtn" title="やり直し ⇧⌘Z">↪︎</button>
   <button id="addBtn" class="primary">＋<span class="lbl">札</span></button>
   <button id="reviewBtn" class="gold">◎ <span class="lbl">意味を貼る</span></button>
-  <button id="linkBtn" title="離れた札どうしをつなぐ">⌁<span class="lbl"> つなぐ</span></button>
+  <button id="linkBtn" title="離れた札どうしをつなぐ（⇧を押しながら相手の札をクリックでも同じ）">⌁<span class="lbl"> つなぐ</span></button>
   <button id="aiBtn" class="primary">🤖 <span class="lbl">AIに渡す</span></button>
   <button id="rolesBtn">⚙<span class="lbl"> 意味の種類</span></button>
   <button id="layV" title="縦に並べ直す">↕</button>
@@ -380,7 +380,7 @@
   <div class="subtle">この .md は 📂 で読み戻せる（末尾に元データが入っている）。</div>
 </div>
 
-<div id="hint">空いてる所をダブルクリック＝札 ／ 書いて⏎＝次の札　⇥＝下に札　⇧⏎＝改行　⌥数字＝意味を貼る ／ ⌁＝離れた札をつなぐ ／ ⌘Z</div>
+<div id="hint">空いてる所をダブルクリック＝札 ／ 書いて⏎＝次の札　⇥＝下に札　⇧⏎＝改行　⌥数字＝意味を貼る ／ ⇧クリック＝離れた札をつなぐ ／ ⌘Z</div>
 <div id="toast"></div>
 
 <div id="edbar">
@@ -422,7 +422,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.6.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.6.1";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 const PH="（ここに書く）";              // 未記入あつかいの文字
@@ -905,6 +905,13 @@ function toWorld(cx,cy){
 function wireNode(el){
   let dragging=false,moved=false,sx,sy,ox,oy,wasSel=false,ptype="mouse";
   el.addEventListener("pointerdown",e=>{
+    if(e.shiftKey&&!linking&&state.selected&&state.nodes[state.selected]
+       &&state.selected!==el.dataset.id&&state.nodes[el.dataset.id]){
+      e.stopPropagation();e.preventDefault();          /* ⇧クリック＝選んでいる札と、この札をつなぐ */
+      if(ed)commitEd();
+      toggleLink(state.selected,el.dataset.id);
+      return;
+    }
     if(linking&&state.nodes[el.dataset.id]){       /* ⌁ つなぎ待ち：札のどこを押してもここでつなぐ */
       e.stopPropagation();e.preventDefault();
       const b=el.dataset.id;
@@ -2118,6 +2125,12 @@ $("newTab").onclick=()=>{const id=blankMap();switchTo(id);save();};
 $("clearBtn").onclick=clearAll;
 $("delOneBtn").onclick=delNode;
 $("cutBtn").onclick=cutParent;
+document.addEventListener("keydown",e=>{
+  if(e.key==="Shift"&&!ed&&state.selected&&!document.querySelector(".modal.open"))
+    document.body.classList.add("shiftlink");
+});
+document.addEventListener("keyup",e=>{if(e.key==="Shift")document.body.classList.remove("shiftlink");});
+window.addEventListener("blur",()=>document.body.classList.remove("shiftlink"));
 $("viewAdd").onclick=addView;
 $("viewInput").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();addView();}};
 $("viewInput").onfocus=()=>{previewView=true;drawLinks(visibleSet());paintViewMarks();};
