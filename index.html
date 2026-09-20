@@ -74,8 +74,8 @@
   svg#links{position:absolute;left:0;top:0;overflow:visible;pointer-events:none;}
   /* ⌁ つなぎ：親子の枝（各色のなめらかな曲線）とは別物と一目で分かる線。
      外へ大きく反る弧＋粒が流れる破線。ふだんは薄く、その札を選んだ時だけ光る。 */
-  svg#links .lk{fill:none;stroke:#ff2e97;stroke-width:1.9;stroke-linecap:round;stroke-dasharray:3 6;}
-  svg#links .lk.on{stroke-width:2.2;filter:drop-shadow(0 0 7px #ff2e97);animation:lkflow 1.3s linear infinite;}
+  svg#links .lk{fill:none;stroke:#ff2e97;stroke-width:2.1;stroke-linecap:round;stroke-dasharray:4 7;}
+  svg#links .lk.on{stroke-width:2.7;filter:drop-shadow(0 0 7px #ff2e97);animation:lkflow 1.3s linear infinite;}
   @keyframes lkflow{to{stroke-dashoffset:-19;}}
   svg#links .lkt{fill:#ff8fd6;font-size:10px;font-family:var(--mono);text-anchor:middle;
     paint-order:stroke;stroke:#08080f;stroke-width:3px;}
@@ -266,14 +266,14 @@
   <button id="redoBtn" title="やり直し ⇧⌘Z">↪︎</button>
   <button id="addBtn" class="primary">＋<span class="lbl">札</span></button>
   <button id="reviewBtn" class="gold">◎ <span class="lbl">意味を貼る</span></button>
-  <button id="linkBtn" title="離れた札どうしをつなぐ（⇧を押しながら相手の札をクリックでも同じ）">⌁<span class="lbl"> つなぐ</span></button>
+  <button id="linkBtn" title="そことそこつながるやん線を引く（⇧＋相手の札をクリックでも同じ。外すのは ⌥⇧クリック）">⌁<span class="lbl"> つなぐ</span></button>
   <button id="aiBtn" class="primary">🤖 <span class="lbl">AIに渡す</span></button>
   <button id="rolesBtn">⚙<span class="lbl"> 意味の種類</span></button>
   <button id="layV" title="縦に並べ直す">↕</button>
   <button id="layH" title="横に並べ直す">↔</button>
   <button id="fitBtn">全体</button>
   <button id="snapBtn" title="マス目に吸着">⊞</button>
-  <button id="lkShowBtn" title="つなぎの線を出す／隠す">⌁表示</button>
+  <button id="lkShowBtn" title="そことそこつながるやん線を出す／隠す">⌁表示</button>
   <input id="search" type="text" placeholder="さがす" style="width:110px">
   <button id="exportBtn" title="JSONで保存">💾</button>
   <button id="importBtn" title="読み込み（.json / .md）">📂</button>
@@ -306,7 +306,7 @@
     <div id="viewList"></div>
   </section>
   <section><h3>つながり</h3><div class="path" id="pathBox"></div></section>
-  <section id="linkSec" style="display:none"><h3>⌁ つなぎ（横のつながり）</h3><div id="linkBox"></div></section>
+  <section id="linkSec" style="display:none"><h3>⌁ そことそこつながるやん線</h3><div id="linkBox"></div></section>
   <section>
     <h3>この札は何を出したかった？</h3>
     <div class="rolerow" id="roleRow"></div>
@@ -385,7 +385,7 @@
   <div class="subtle">この .md は 📂 で読み戻せる（末尾に元データが入っている）。</div>
 </div>
 
-<div id="hint">空いてる所をダブルクリック＝札 ／ 書いて⏎＝次の札　⇥＝下に札　⇧⏎＝改行　⌥数字＝意味を貼る ／ ⇧クリック＝離れた札をつなぐ ／ ⌘Z</div>
+<div id="hint">空いてる所をダブルクリック＝札 ／ 書いて⏎＝次の札　⇥＝下に札　⇧⏎＝改行　⌥数字＝意味を貼る ／ ⇧クリック＝つながるやん線（⌥⇧で外す） ／ ⌘Z</div>
 <div id="toast"></div>
 
 <div id="edbar">
@@ -427,7 +427,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.6.3";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.7.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 const PH="（ここに書く）";              // 未記入あつかいの文字
@@ -705,11 +705,15 @@ function findLink(a,b){                             // 向きが逆でも同じ1
   l=linksOf(B).find(x=>x.to===a);     if(l)return{owner:B,link:l};
   return null;
 }
-function toggleLink(a,b){
+function toggleLink(a,b,allowCut){
   const ex=findLink(a,b); if(a===b)return;
+  if(ex&&!allowCut){                              /* もうある線は、勝手に消さない */
+    toast("⌁ この2枚はもうつながってる（外すなら ⌥⇧クリック か 右の ✕）");
+    return;
+  }
   snapshot();
-  if(ex){ex.owner.links=ex.owner.links.filter(x=>x!==ex.link);toast("⌁ つながりを外した");}
-  else{linksOf(state.nodes[a]).push({to:b,label:""});toast("⌁ つないだ");}
+  if(ex){ex.owner.links=ex.owner.links.filter(x=>x!==ex.link);toast("⌁ つながるやん線を外した");}
+  else{linksOf(state.nodes[a]).push({to:b,label:""});toast("⌁ つながるやん線を引いた");}
   render();openInsp();
 }
 function startLink(){
@@ -717,7 +721,7 @@ function startLink(){
   if(!state.selected||!state.nodes[state.selected]){toast("先に、つなぎ元の札を選んで");return;}
   if(linking){stopLink();return;}
   linking=state.selected;document.body.classList.add("linking");
-  toast("⌁ つなぐ相手の札をクリック（Esc でやめる）");
+  toast("⌁ つながるやん線を引く相手の札をクリック（Esc でやめる）");
   updateLinkBtn();
 }
 function stopLink(){linking=null;document.body.classList.remove("linking");updateLinkBtn();}
@@ -917,7 +921,7 @@ function wireNode(el){
       if(from&&from!==el.dataset.id){                  /* ⇧クリック＝選んでいる札と、この札をつなぐ */
         e.stopPropagation();e.preventDefault();
         if(ed)commitEd();
-        toggleLink(from,el.dataset.id);
+        toggleLink(from,el.dataset.id,e.altKey);      /* ⌥も一緒に押していたら外す */
         return;
       }
       if(!from)toast("⇧でつなぐには、先につなぎ元の札をふつうにクリックして選んで");
@@ -969,7 +973,7 @@ function wireNode(el){
       }
       if(e.shiftKey){                                  /* ＋の上の⇧クリックも「つなぐ」。札は作らない */
         const from=state.selected&&state.nodes[state.selected]?state.selected:null;
-        if(from&&from!==el.dataset.id&&state.nodes[el.dataset.id]){toggleLink(from,el.dataset.id);return;}
+        if(from&&from!==el.dataset.id&&state.nodes[el.dataset.id]){toggleLink(from,el.dataset.id,e.altKey);return;}
         if(!from){toast("⇧でつなぐには、先につなぎ元の札をふつうにクリックして選んで");return;}
       }
       if(growNow)growNow.cancel();                 /* 前の引っぱりが残っていたら片づける */
@@ -1432,7 +1436,7 @@ function renderLinkBox(){
     const r=linkRows[+row.dataset.i];
     row.querySelector(".llb").oninput=e=>{r.link.label=e.target.value;drawLinks(visibleSet());saveSoon();};
     row.querySelector(".lgo").onclick=()=>{select(r.other);render();focusNode(r.other);};
-    row.querySelector(".lx").onclick=()=>{toggleLink(state.selected,r.other);};
+    row.querySelector(".lx").onclick=()=>{toggleLink(state.selected,r.other,true);};
   });
 }
 
@@ -1786,7 +1790,7 @@ function buildMarkdown(){
     });
   }));
   if(lks.length){
-    L.push("### ⌁ 離れた札どうしのつなぎ","");
+    L.push("### ⌁ そことそこつながるやん線（離れた札どうしの横のつながり）","");
     L.push("親子の上下とは別に、本人があとから「ここと、ここはつながっている」と引いた線です。",
            "階層には出てこない関係なので、読むときはここを重く見てください。","");
     L.push(...lks,"");
@@ -2162,7 +2166,7 @@ $("viewInput").oninput=()=>{if(previewView)drawLinks(visibleSet());};
 $("linkBtn").onclick=()=>startLink();
 $("linkBtn2").onclick=()=>startLink();
 $("lkShowBtn").onclick=()=>{db.lkShow=db.lkShow===false;updateLinkBtn();render();
-  toast(db.lkShow===false?"⌁ つなぎの線をひっこめた":"⌁ つなぎの線を出した");};
+  toast(db.lkShow===false?"⌁ つながるやん線をひっこめた":"⌁ つながるやん線を出した");};
 $("reloadBtn").onclick=()=>{save();location.replace(location.pathname+"?v="+Date.now());};
 $("search").oninput=e=>{query=e.target.value.trim();render();};
 
