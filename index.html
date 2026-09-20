@@ -110,6 +110,29 @@
   #linkBox .lrow input{flex:1;min-width:0;font-size:11px;padding:3px 6px}
   #linkBox .lnm{font-size:11px;color:#ff8fd6;max-width:95px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
+  /* ===== ▢ 枠（ひとまとまりと見た組を囲う。中の札ごと動かせる） ===== */
+  #frames{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none}
+  .frame{position:absolute;border:2px dashed var(--fc,#6f7bd6);border-radius:16px;pointer-events:none;
+    box-shadow:0 0 30px -14px var(--fc,#6f7bd6) inset}
+  .frame .fe{position:absolute;pointer-events:auto;cursor:grab}
+  .frame .ft{left:0;right:0;top:-7px;height:15px}
+  .frame .fb{left:0;right:0;bottom:-7px;height:15px}
+  .frame .fl{top:0;bottom:0;left:-7px;width:15px}
+  .frame .fr{top:0;bottom:0;right:-7px;width:15px}
+  .frame .ftag{position:absolute;left:10px;top:-14px;pointer-events:auto;cursor:grab;
+    background:#08080f;border:1px solid var(--fc,#6f7bd6);color:var(--fc,#6f7bd6);
+    padding:1px 10px;border-radius:5px;font-size:11px;font-family:var(--mono);white-space:nowrap;
+    max-width:60vw;overflow:hidden;text-overflow:ellipsis}
+  .frame.drag{opacity:.9}
+  .frame.drag .ftag{cursor:grabbing}
+  #frameList .frow{display:flex;gap:6px;align-items:center;margin-top:6px}
+  #frameList .frow input[type=text]{flex:1;min-width:0;font-size:11.5px;padding:3px 6px}
+  #frameList .fsw{display:flex;gap:3px;flex:none}
+  #frameList .fsw i{width:13px;height:13px;border-radius:50%;cursor:pointer;display:block;
+    border:1.5px solid transparent}
+  #frameList .fsw i.on{border-color:#fff}
+  #frameList .fn{font-size:9.5px;color:var(--dim);font-family:var(--mono);flex:none}
+
   /* ===== node ===== */
   .node{position:absolute;width:224px;padding:9px 12px 10px;border-radius:6px;
     background:linear-gradient(170deg,#14142a 0%,#0b0b16 100%);
@@ -282,6 +305,7 @@
   <button id="addBtn" class="primary">＋<span class="lbl">札</span></button>
   <button id="reviewBtn" class="gold">◎ <span class="lbl">意味を貼る</span></button>
   <button id="linkBtn" title="そことそこつながるやん線を引く（⇧＋相手の札をクリックでも同じ。外すのは ⌥⇧クリック）">⌁<span class="lbl"> つなぐ</span></button>
+  <button id="frameBtn" title="選んだ札とその子ぜんぶを枠で囲う（⌘クリックでも同じ）">▢<span class="lbl"> 枠</span></button>
   <button id="aiBtn" class="primary">🤖 <span class="lbl">AIに渡す</span></button>
   <button id="rolesBtn">⚙<span class="lbl"> 意味の種類</span></button>
   <button id="layV" title="縦に並べ直す">↕</button>
@@ -305,6 +329,7 @@
 
 <div id="stage">
   <div id="world">
+    <div id="frames"></div>
     <svg id="links"></svg>
   </div>
 </div>
@@ -319,6 +344,10 @@
     </div>
     <div class="subtle" style="margin-top:3px;font-size:10px">⏎＝改行　／　⇧⏎＝書く</div>
     <div id="viewList"></div>
+  </section>
+  <section id="frameSec" style="display:none">
+    <h3>▢ 枠<span class="vcap">名前・色を変えられる／枠のふちを掴むと中ごと動く</span></h3>
+    <div id="frameList"></div>
   </section>
   <section><h3>つながり</h3><div class="path" id="pathBox"></div></section>
   <section id="linkSec" style="display:none"><h3>⌁ そことそこつながるやん線</h3><div id="linkBox"></div></section>
@@ -443,7 +472,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.8.1";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.9.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 const ZMIN=.01, ZMAX=60;                 // 拡大・縮小の幅。1が等倍。事実上どこまでも寄れる／引ける
@@ -567,7 +596,7 @@ function markSaved(ok){
 /* ===== マップ（タブ） ===== */
 function blankMap(name){
   const id="m"+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
-  const m={name:name||"新しい紙",nodes:{},view:{x:0,y:0,scale:1},selected:null,seq:1,views:[]};
+  const m={name:name||"新しい紙",nodes:{},view:{x:0,y:0,scale:1},selected:null,seq:1,views:[],frames:[]};
   const prev=state; state=m;
   const first=add(SEED_TEXT,-112,-40,null);
   m.selected=first;
@@ -669,6 +698,7 @@ function render(){
     memo.textContent=n.memo||""; memo.style.display=n.memo?"":"none";
   });
   Object.values(existing).forEach(el=>el.remove());
+  renderFrames();
   drawLinks(keep);
   paintViewMarks();
   renderTagbar();
@@ -746,6 +776,112 @@ function updateLinkBtn(){
   $("linkBtn").classList.toggle("on",!!linking);
   $("lkShowBtn").classList.toggle("on",db.lkShow!==false);
 }
+/* =========================================================
+   ▢ 枠
+   「この一帯はひとまとまり」と思ったところを囲う。中身は札＋その子ぜんぶ。
+   名前と色を付けられる。枠のふち（か名前）を掴むと、中の札ごと動く。
+   ========================================================= */
+const FRAME_PALETTE=["#6f7bd6","#4fb0a5","#c98f4f","#b06fa8","#5f9fd6","#8fa85f","#d66f7b","#7b6fd6"];
+function framesOf(){if(!Array.isArray(state.frames))state.frames=[];return state.frames;}
+function descIds(id){                               /* その札と、ぶら下がっている子ぜんぶ */
+  const out=[id];
+  (function walk(p){Object.values(state.nodes).forEach(n=>{if(n.parent===p){out.push(n.id);walk(n.id);}});})(id);
+  return out;
+}
+function frameRect(ids){
+  const ns=(ids||[]).map(id=>state.nodes[id]).filter(Boolean);
+  if(!ns.length)return null;
+  let l=1e9,t=1e9,r=-1e9,b=-1e9;
+  ns.forEach(n=>{const x=boxOf(n);
+    l=Math.min(l,x.l);t=Math.min(t,x.t);r=Math.max(r,x.l+x.w);b=Math.max(b,x.t+x.h);});
+  const P=26;
+  return {x:l-P,y:t-P,w:(r-l)+P*2,h:(b-t)+P*2};
+}
+function addFrame(){
+  const id=state.selected;
+  if(!id||!state.nodes[id]){toast("▢ 枠にしたい札を選んでから");return;}
+  const ids=descIds(id);
+  snapshot();
+  const fs=framesOf();
+  fs.push({id:"f"+Date.now().toString(36),
+           name:oneLine(state.nodes[id].text).slice(0,18)||"枠",
+           color:FRAME_PALETTE[fs.length%FRAME_PALETTE.length], ids:ids});
+  save();render();openInsp();
+  toast("▢ "+ids.length+"枚を枠にした（名前と色は右で変えられる）");
+}
+function delFrame(f){
+  snapshot();
+  state.frames=framesOf().filter(x=>x!==f);
+  save();render();openInsp();toast("▢ 枠を外した（札は消えていない）");
+}
+function renderFrames(){
+  const host=$("frames"); if(!host)return;
+  host.innerHTML=framesOf().map(f=>{
+    const b=frameRect(f.ids); if(!b)return "";
+    return '<div class="frame" data-id="'+f.id+'" style="left:'+b.x+'px;top:'+b.y+'px;width:'+b.w+
+      'px;height:'+b.h+'px;--fc:'+f.color+';background:'+tint(f.color,.06)+'">'+
+      '<div class="fe ft"></div><div class="fe fb"></div><div class="fe fl"></div><div class="fe fr"></div>'+
+      '<div class="ftag">▢ '+esc(f.name||"枠")+'</div></div>';
+  }).join("");
+  host.querySelectorAll(".frame").forEach(wireFrame);
+}
+function wireFrame(el){
+  const f=framesOf().find(x=>x.id===el.dataset.id); if(!f)return;
+  let sx=0,sy=0,orig=null,base=null,moved=false;
+  const start=e=>{
+    e.stopPropagation();e.preventDefault();
+    sx=e.clientX;sy=e.clientY;moved=false;
+    orig=f.ids.map(id=>state.nodes[id]).filter(Boolean).map(n=>({n:n,x:n.x,y:n.y}));
+    base={x:parseFloat(el.style.left)||0,y:parseFloat(el.style.top)||0};
+    el.classList.add("drag");
+    try{e.target.setPointerCapture(e.pointerId);}catch(err){}
+  };
+  const move=e=>{
+    if(!orig)return;
+    const dx=(e.clientX-sx)/state.view.scale, dy=(e.clientY-sy)/state.view.scale;
+    if(!moved){ if(Math.abs(dx)<2&&Math.abs(dy)<2)return; snapshot();moved=true; }
+    orig.forEach(o=>{
+      o.n.x=sn(o.x+dx); o.n.y=sn(o.y+dy);
+      const ne=nodeEl(o.n.id); if(ne){ne.style.left=o.n.x+"px";ne.style.top=o.n.y+"px";}
+    });
+    el.style.left=(base.x+dx)+"px"; el.style.top=(base.y+dy)+"px";
+    drawLinks(visibleSet());
+  };
+  const end=()=>{
+    if(!orig)return;
+    orig=null;el.classList.remove("drag");
+    if(moved){save();render();}else{renderFrames();}
+  };
+  el.querySelectorAll(".fe,.ftag").forEach(h=>{
+    h.addEventListener("pointerdown",start);
+    h.addEventListener("pointermove",move);
+    h.addEventListener("pointerup",end);
+    h.addEventListener("pointercancel",end);
+  });
+}
+function renderFrameList(){
+  const sec=$("frameSec"), box=$("frameList"); if(!sec)return;
+  const fs=framesOf();
+  sec.style.display=fs.length?"":"none";
+  if(!fs.length){box.innerHTML="";return;}
+  box.innerHTML=fs.map((f,i)=>
+    '<div class="frow" data-i="'+i+'">'+
+    '<input type="text" class="fnm" value="'+esc(f.name||"")+'" placeholder="枠の名前">'+
+    '<span class="fn">'+(f.ids||[]).filter(id=>state.nodes[id]).length+'枚</span>'+
+    '<span class="fsw">'+FRAME_PALETTE.map(c=>'<i data-c="'+c+'" class="'+(c===f.color?"on":"")+
+      '" style="background:'+c+'"></i>').join("")+'</span>'+
+    '<button class="fx" title="枠を外す">✕</button></div>').join("");
+  box.querySelectorAll(".frow").forEach(row=>{
+    const f=fs[+row.dataset.i];
+    const nm=row.querySelector(".fnm");
+    nm.oninput=()=>{f.name=nm.value;renderFrames();saveSoon();};
+    row.querySelectorAll(".fsw i").forEach(sw=>sw.onclick=()=>{
+      f.color=sw.dataset.c;renderFrames();renderFrameList();save();
+    });
+    row.querySelector(".fx").onclick=()=>{if(confirm("この枠を外します（札は消えません）"))delFrame(f);};
+  });
+}
+
 /* =========================================================
    🔭 俯瞰ライン
    「ここまで書いたものを上から見ると何をしていたのか」を、都度その場で1行書く。
@@ -825,7 +961,11 @@ function touchView(v,on){                       /* 行にカーソルが乗っ�
   hoverView=on?v:(hoverView===v?null:hoverView);
   drawLinks(visibleSet());paintViewMarks();
 }
-function autoGrow(t){if(!t)return;t.style.height="auto";t.style.height=Math.min(220,t.scrollHeight+2)+"px";}
+function autoGrow(t){                              /* 中身の高さに合わせる。
+  開いた直後は幅がまだ決まっていないことがあるので、1コマ待ってから測る */
+  if(!t)return;
+  requestAnimationFrame(()=>{t.style.height="auto";t.style.height=Math.min(220,t.scrollHeight+2)+"px";});
+}
 function renderViews(){
   const list=$("viewList"), vs=viewsOf();
   list.innerHTML=vs.map((v,i)=>
@@ -933,6 +1073,10 @@ function toWorld(cx,cy){
 function wireNode(el){
   let dragging=false,moved=false,sx,sy,ox,oy,wasSel=false,ptype="mouse";
   el.addEventListener("pointerdown",e=>{
+    if((e.metaKey||e.ctrlKey)&&!linking&&state.nodes[el.dataset.id]){   /* ⌘クリック＝この札と子ぜんぶを枠に */
+      e.stopPropagation();e.preventDefault();
+      select(el.dataset.id);addFrame();return;
+    }
     if(e.shiftKey&&!linking&&state.nodes[el.dataset.id]){
       const from=state.selected&&state.nodes[state.selected]?state.selected:null;
       if(from&&from!==el.dataset.id){                  /* ⇧クリック＝選んでいる札と、この札をつなぐ */
@@ -1393,8 +1537,8 @@ function focusNode(id){
 function openInsp(){
   const id=state.selected,n=state.nodes[id];
   insp.classList.add("open");                    /* 俯瞰ラインだけは、札を選んでいなくても書ける */
-  renderViews();
-  insp.querySelectorAll("section").forEach(sec=>{if(sec.id!=="viewSec")sec.style.display=n?"":"none";});
+  renderViews();renderFrameList();
+  insp.querySelectorAll("section").forEach(sec=>{if(sec.id!=="viewSec"&&sec.id!=="frameSec")sec.style.display=n?"":"none";});
   if(!n)return;
   const chain=[];let c=n;
   while(c){chain.unshift(c);c=c.parent?state.nodes[c.parent]:null;}
@@ -1846,6 +1990,19 @@ function buildMarkdown(){
            "階層には出てこない関係なので、読むときはここを重く見てください。","");
     L.push(...lks,"");
   }
+  const frs=[];
+  maps.forEach(m=>(m.frames||[]).forEach(f=>{
+    const ns=(f.ids||[]).map(id=>m.nodes[id]).filter(Boolean).filter(n=>!isPH(n.text));
+    if(!ns.length)return;
+    frs.push("- **"+(f.name||"枠")+"**（"+ns.length+"枚）： "+ns.map(n=>oneLine(n.text)).join(" ／ ")+
+      (maps.length>1?"　（"+mapTitle(m)+"）":""));
+  }));
+  if(frs.length){
+    L.push("### ▢ 枠（本人が「この一帯はひとまとまり」と囲んだ組）","");
+    L.push("親子の上下とは別に、本人が手で囲んだまとまりです。**枠の名前は本人が付けたもの**なので、",
+           "そのまとまりを何だと思っているかがそこに出ています。","");
+    L.push(...frs,"");
+  }
 
   L.push("---","","## 2. あとから貼った意味べつのまとめ","");
   let anyRole=false;
@@ -2206,6 +2363,7 @@ document.addEventListener("keydown",e=>{
 });
 document.addEventListener("keyup",e=>{if(e.key==="Shift")document.body.classList.remove("shiftlink");});
 window.addEventListener("blur",()=>document.body.classList.remove("shiftlink"));
+$("frameBtn").onclick=addFrame;
 $("viewAdd").onclick=addView;
 $("viewInput").onkeydown=e=>{                    /* ⏎はふつうに改行。⇧⏎で書く */
   if(e.key==="Enter"&&e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();addView();}
@@ -2269,6 +2427,9 @@ function normalize(){
     if(!m.view)m.view={x:0,y:0,scale:1};
     if(!m.seq)m.seq=Object.keys(m.nodes).length+1;
     if(!Array.isArray(m.views))m.views=[];
+    if(!Array.isArray(m.frames))m.frames=[];
+    m.frames.forEach(f=>{f.ids=(Array.isArray(f.ids)?f.ids:[]).filter(id=>m.nodes[id]);});
+    m.frames=m.frames.filter(f=>f.ids.length);
     m.views.forEach(v=>{v.ids=(Array.isArray(v.ids)?v.ids:[]).filter(id=>m.nodes[id]);});
     Object.values(m.nodes).forEach(n=>{
       if(!("role"in n))n.role=null;
