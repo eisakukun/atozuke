@@ -254,6 +254,7 @@
   <button id="exportBtn" title="JSONで保存">💾</button>
   <button id="importBtn" title="読み込み（.json / .md）">📂</button>
   <button id="bakBtn" title="自動の控えから戻す">🕘</button>
+  <button id="syncBtn" title="ほかの端末と同期">☁<span id="syncDot"></span></button>
   <button id="newTab">＋新規</button>
   <button id="clearBtn" title="このマップを空にする">🗑</button>
   <button id="reloadBtn" title="読み直す">⟳</button>
@@ -357,6 +358,20 @@
   <div class="row" id="edRoles"></div>
 </div>
 
+<div class="modal" id="sync">
+  <h2>☁ ほかの端末と同期 <span class="sp"><button id="syncClose">閉じる</button></span></h2>
+  <div class="subtle">Macで書いた続きをiPhoneで開けるようにする。棚（Googleスプレッドシート）に紙ごとに置いて、紙ごとに新しい方を残す。だから2台で別々の紙を書いても、どちらも消えない。</div>
+  <label class="slbl" style="display:block;margin-top:12px;font-size:11px;color:var(--dim)">同期のURL（GASのexec）</label>
+  <input type="text" id="syUrl" placeholder="https://script.google.com/macros/s/..../exec" style="width:100%;margin-top:4px">
+  <label class="slbl" style="display:block;margin-top:10px;font-size:11px;color:var(--dim)">あいことば（同じにした端末どうしがつながる）</label>
+  <input type="text" id="syCode" placeholder="atozuke" style="width:100%;margin-top:4px">
+  <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+    <button id="sySave" class="primary">保存してつなぐ</button>
+    <button id="syNow">いま同期する</button>
+    <button id="syOff">やめる（この端末だけに戻す）</button>
+  </div>
+  <div id="syState" class="subtle" style="margin-top:12px"></div>
+</div>
 <div class="modal" id="bak">
   <h2>🕘 自動の控え <span class="sp"><button id="bakClose">閉じる</button></span></h2>
   <div class="subtle">開いたとき・3分ごと（中身が変わったときだけ）に、この端末の中へ自動で控えを取っている。直近20回分＋日ごとに1つ（14日分）。消えた・壊れたときはここから戻せる。</div>
@@ -372,7 +387,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.3.1";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.4.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 const PH="（ここに書く）";              // 未記入あつかいの文字
@@ -430,7 +445,7 @@ const stage=document.getElementById("stage"), world=document.getElementById("wor
       svg=document.getElementById("links"), insp=document.getElementById("insp");
 const $=id=>document.getElementById(id);
 
-let db={maps:{},order:[],cur:null,snap:false,roles:SEED_ROLES.map(r=>({...r})),rolesVer:ROLES_VER};
+let db={maps:{},order:[],cur:null,snap:false,tomb:{},metaU:0,roles:SEED_ROLES.map(r=>({...r})),rolesVer:ROLES_VER};
 let state=null, activeTags=new Set(), query="", undoStack=[], redoStack=[];
 let review={on:false,list:[],i:0};
 let asks=new Set(["read"]);
@@ -468,12 +483,21 @@ function redo(){if(!redoStack.length)return;undoStack.push(capture());restore(re
 function updateHistBtns(){$("undoBtn").disabled=!undoStack.length;$("redoBtn").disabled=!redoStack.length;}
 let quiet=false, saveTimer=0;
 /* 自動保存：何か変わるたび＋書いている最中は1文字ごと（0.25秒まとめ） */
-function save(){
+let lastEditAt=0, metaSig="";
+function metaNow(){return JSON.stringify({order:db.order,roles:db.roles,rolesVer:db.rolesVer});}
+function save(touch){
   if(quiet)return;
   clearTimeout(saveTimer);saveTimer=0;
   db.w=VER;
+  if(touch!==false){                       /* 自分で書き換えた時だけ「いつ触ったか」を更新する */
+    if(state)state.u=Date.now();
+    lastEditAt=Date.now();
+    const sig=metaNow();
+    if(sig!==metaSig){metaSig=sig;db.metaU=Date.now();}
+  }
   try{localStorage.setItem(STORE,JSON.stringify(db));markSaved(true);}
   catch(e){markSaved(false);backupNow();}
+  syncSoon();
 }
 function saveSoon(){clearTimeout(saveTimer);saveTimer=setTimeout(save,250);markSaved(null);}
 function markSaved(ok){
@@ -526,6 +550,7 @@ function delMap(id){
   if(db.order.length<2){alert("最後の1枚は消せません（🗑で中身を空にできます）");return;}
   if(!confirm("「"+mapTitle(m)+"」（"+n+"枚）を丸ごと消します。よろしいですか？"))return;
   delete db.maps[id]; db.order=db.order.filter(x=>x!==id);
+  db.tomb[id]=Date.now();                    /* 消した事実も同期する */
   if(db.cur===id) switchTo(db.order[0]); else {renderTabs();save();}
 }
 
@@ -1625,6 +1650,137 @@ function checkVersion(){
 }
 
 /* ===== モーダル ===== */
+/* =========================================================
+   ☁ ほかの端末と同期（GAS＋スプレッドシートの棚）
+   紙（マップ）を背番号にして、紙ごとに「あとで触った方」を残す。
+   だから2台で別々の紙を書いても、どちらも消えない。
+   見ている場所（拡大・位置）は端末ごとなので受け取らない＝画面が飛ばない。
+   ========================================================= */
+const SY_URL="az_gas_url", SY_CODE="az_gas_code";
+let syUrl=localStorage.getItem(SY_URL)||"";
+let syCode=localStorage.getItem(SY_CODE)||"atozuke";
+let syBusy=false, syTimer=0, syLast=0, syMsg="";
+
+function syncOn(){return !!syUrl;}
+function syncDot(ok){
+  const d=$("syncDot");if(!d)return;
+  d.textContent=!syncOn()?"":ok===null?"…":ok===false?"!":"";
+  d.style.color=ok===false?"#ff3b3b":"#7cff9b";
+}
+function syPayload(){
+  return {code:syCode,maps:db.maps,tomb:db.tomb||{},
+          meta:{order:db.order,roles:db.roles,rolesVer:db.rolesVer,u:db.metaU||0}};
+}
+function syncSoon(){
+  if(!syncOn())return;
+  clearTimeout(syTimer);
+  syTimer=setTimeout(()=>syncNow(true),2000);      /* 書き終わって2秒静かになったら送る */
+}
+function syncNow(silent){
+  if(!syncOn()){if(!silent)toast("☁ まず同期のURLを入れて");return Promise.resolve();}
+  if(syBusy)return Promise.resolve();
+  syBusy=true;syncDot(null);
+  return fetch(syUrl,{method:"POST",body:JSON.stringify(syPayload()),
+                      headers:{"Content-Type":"text/plain;charset=utf-8"}})
+    .then(r=>r.json())
+    .then(res=>{
+      if(!res||!res.ok)throw new Error((res&&res.error)||"棚が返事をしない");
+      syLast=Date.now();syMsg="";
+      takeIn(res);
+      syncDot(true);showSyncState();
+    })
+    .catch(e=>{
+      syMsg=String((e&&e.message)||e);syncDot(false);showSyncState();
+      if(!silent)toast("☁ つながらない："+syMsg);
+    })
+    .then(()=>{syBusy=false;});
+}
+
+/* 棚から降りてきた中身を、いまの端末に取り込む */
+function takeIn(res){
+  const inc=res.maps||{}, tomb=res.tomb||{}, meta=res.meta;
+  const busyCur=!!ed||(Date.now()-lastEditAt<3000);   /* いまの紙を書いている最中は横取りしない */
+  let changed=false, curGone=false;
+
+  Object.keys(inc).forEach(id=>{
+    const a=db.maps[id], b=inc[id];
+    if(a&&(Number(b.u)||0)<=(Number(a.u)||0))return;
+    if(id===db.cur&&busyCur)return;
+    if(a){b.view=a.view;b.selected=a.selected;}       /* 見ている場所は端末ごと */
+    db.maps[id]=b;changed=true;
+  });
+
+  Object.keys(tomb).forEach(id=>{
+    const t=Number(tomb[id])||0;
+    if(!db.tomb[id]||db.tomb[id]<t){db.tomb[id]=t;changed=true;}
+    const m=db.maps[id];
+    if(m&&(Number(m.u)||0)<=t&&!(id===db.cur&&busyCur)){
+      delete db.maps[id];
+      if(id===db.cur)curGone=true;
+      changed=true;
+    }
+  });
+
+  if(meta&&(Number(meta.u)||0)>(db.metaU||0)){
+    if(Array.isArray(meta.roles)&&meta.roles.length)db.roles=meta.roles;
+    if(meta.rolesVer)db.rolesVer=meta.rolesVer;
+    if(Array.isArray(meta.order)){
+      const o=[];meta.order.forEach(id=>{if(db.maps[id]&&o.indexOf(id)<0)o.push(id);});
+      db.order=o;
+    }
+    db.metaU=Number(meta.u)||0;changed=true;
+  }
+  if(!changed)return;
+
+  /* 並び順の掃除：消えた紙を外し、入っていない紙を足す */
+  db.order=db.order.filter(id=>db.maps[id]);
+  Object.keys(db.maps).forEach(id=>{if(db.order.indexOf(id)<0)db.order.push(id);});
+  if(!db.maps[db.cur]){
+    if(!db.order.length){db.cur=blankMap("はじめの紙");}
+    else db.cur=db.order[0];
+    curGone=true;
+  }
+  state=db.maps[db.cur];
+  normalize();
+  metaSig=metaNow();
+  save(false);                                       /* 受け取ったぶんも端末に残す（時刻は触らない） */
+  if(curGone){activeTags.clear();undoStack.length=0;redoStack.length=0;updateHistBtns();}
+  renderTabs();
+  if(!ed){render();openInsp();if(curGone)applyView();toast("☁ 他の端末の続きが届いた");}
+}
+
+function showSyncState(){
+  const el=$("syState");if(!el)return;
+  if(!syncOn()){el.innerHTML="いまは<b>この端末だけ</b>に保存している（ほかの端末には出てこない）。";return;}
+  const when=syLast?new Date(syLast).toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"まだ";
+  el.innerHTML=(syMsg?'<span style="color:#ff3b3b">つながらない：'+esc(syMsg)+"</span><br>":"")+
+    "つないでいる／あいことば <b>"+esc(syCode)+"</b>（同じにした端末どうしが揃う）<br>"+
+    "最後に同期：<b>"+when+"</b> ／ いま紙 "+db.order.length+" 枚<br>"+
+    '<a href="#" id="syOpenSheet" style="color:var(--cyan)">棚（スプレッドシート）を開く</a>';
+  const a=$("syOpenSheet");
+  if(a)a.onclick=e=>{e.preventDefault();
+    fetch(syUrl+"?info=1").then(r=>r.json()).then(j=>{if(j&&j.sheet)window.open(j.sheet,"_blank");
+      else toast("棚の場所がわからない");}).catch(()=>toast("棚の場所がわからない"));};
+}
+
+$("syncBtn").onclick=()=>{$("syUrl").value=syUrl;$("syCode").value=syCode;showSyncState();openModal("sync");};
+$("syncClose").onclick=()=>closeModals();
+$("sySave").onclick=()=>{
+  const u=$("syUrl").value.trim(), c=($("syCode").value.trim()||"atozuke");
+  if(u&&!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(u)){
+    if(!confirm("URLの形がいつもと違います。このまま使いますか？"))return;
+  }
+  syUrl=u;syCode=c;
+  localStorage.setItem(SY_URL,syUrl);localStorage.setItem(SY_CODE,syCode);
+  syncDot(syncOn()?null:"");showSyncState();
+  if(syUrl)syncNow().then(()=>{if(!syMsg)toast("☁ つながった。これから勝手に同期する");});
+};
+$("syNow").onclick=()=>syncNow();
+$("syOff").onclick=()=>{
+  if(!confirm("同期をやめます。この端末の中身はそのまま残ります。"))return;
+  syUrl="";localStorage.removeItem(SY_URL);syncDot();showSyncState();toast("☁ 同期をやめた");
+};
+
 function openModal(id){$(id).classList.add("open");$("mask").classList.add("open");}
 function closeModals(){document.querySelectorAll(".modal").forEach(m=>m.classList.remove("open"));
   $("mask").classList.remove("open");}
@@ -1677,6 +1833,9 @@ window.addEventListener("resize",()=>{drawLinks(visibleSet());placeEdbar();});
 
 /* ===== 起動 ===== */
 function normalize(){
+  if(!db.tomb||typeof db.tomb!=="object")db.tomb={};
+  if(typeof db.metaU!=="number")db.metaU=0;
+  Object.values(db.maps||{}).forEach(m=>{ if(typeof m.u!=="number")m.u=0; });
   if(!Array.isArray(db.roles)||!db.roles.length)db.roles=SEED_ROLES.map(r=>({...r}));
   /* あとから増やした初期の種類を、前から使っている人にも1度だけ届ける
      （自分で消した種類が復活しないように、版で1回きり） */
@@ -1716,7 +1875,7 @@ function normalize(){
       if(o&&o.maps&&Object.keys(o.maps).length){db=o;ok=true;}}
   }catch(e){}
   if(raw&&!ok){try{localStorage.setItem(STORE+".broken."+Date.now(),raw);}catch(e){}}   /* 読めなかった中身は捨てずに別名で残す */
-  if(!ok)db={maps:{},order:[],cur:null,snap:false,roles:SEED_ROLES.map(r=>({...r})),rolesVer:ROLES_VER};
+  if(!ok)db={maps:{},order:[],cur:null,snap:false,tomb:{},metaU:0,roles:SEED_ROLES.map(r=>({...r})),rolesVer:ROLES_VER};
   normalize();
   if(!ok){const id=blankMap("はじめの紙");db.cur=id;}
   state=db.maps[db.cur];
@@ -1733,6 +1892,15 @@ function normalize(){
   if("serviceWorker"in navigator&&/^https?:$/.test(location.protocol))
     navigator.serviceWorker.register("sw.js").catch(()=>{});
   checkVersion();
+  /* ☁ 同期：開いた時・戻ってきた時・20秒ごと・書き終わって2秒後 */
+  syncDot(syncOn()?null:"");
+  if(syncOn()){
+    syncNow(true);
+    setInterval(()=>{if(!document.hidden)syncNow(true);},20000);
+    document.addEventListener("visibilitychange",()=>{if(!document.hidden)syncNow(true);});
+    window.addEventListener("online",()=>syncNow(true));
+  }
+  metaSig=metaNow();
 })();
 })();
 </script>
