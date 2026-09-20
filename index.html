@@ -82,6 +82,16 @@
   body.linking #world .node,body.shiftlink #world .node{cursor:crosshair}
   body.linking #world .node:hover,body.shiftlink #world .node:hover{box-shadow:0 0 0 2px #ff2e97,0 0 22px -4px #ff2e97}
   svg#links .vwt{font-size:12px;font-family:var(--mono);paint-order:stroke;stroke:#08080f;stroke-width:4px;}
+  #roleDump{margin-top:9px}
+  #roleDump .dh{display:flex;align-items:center;gap:6px;font-size:11px;font-family:var(--mono);
+    padding:5px 7px;border-radius:4px 4px 0 0;border:1px solid var(--line);border-bottom:none;background:#0b0b16}
+  #roleDump .dbody{max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:0 0 4px 4px;
+    background:#08080f;padding:4px 0}
+  #roleDump .drow{padding:6px 9px;font-size:12px;line-height:1.5;cursor:pointer;
+    border-left:3px solid transparent;white-space:pre-wrap;word-break:break-word}
+  #roleDump .drow:hover{background:#12122a}
+  #roleDump .dno{font-size:9px;color:var(--dim);font-family:var(--mono);margin-right:6px}
+  #roleDump .dmemo{font-size:10.5px;color:var(--muted);margin-top:3px}
   #viewList .vrow{display:flex;gap:6px;align-items:flex-start;margin-top:6px;cursor:default}
   #viewList .vrow textarea{flex:1;min-width:0;font-size:11.5px;padding:4px 6px;line-height:1.5;
     resize:none;overflow:hidden;font-family:inherit}
@@ -310,7 +320,8 @@
   <section>
     <h3>この札は何を出したかった？</h3>
     <div class="rolerow" id="roleRow"></div>
-    <div class="subtle">※あとから貼るもの。書いている最中は気にしなくていい。</div>
+    <div id="roleDump"></div>
+    <div class="subtle">※あとから貼るもの。書いている最中は気にしなくていい。<br>※意味を <b>⌥クリック</b> すると、その意味の札が書いた順にここへ並ぶ。</div>
   </section>
   <section><h3>タグ（スペース区切り）</h3><input type="text" id="tagInput" placeholder="#いつか #仕事"></section>
   <section><h3>メモ</h3><textarea id="memoInput" placeholder="補足・思いついたこと"></textarea></section>
@@ -427,7 +438,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.7.1";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.8.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 const ZMIN=.01, ZMAX=60;                 // 拡大・縮小の幅。1が等倍。事実上どこまでも寄れる／引ける
@@ -1397,7 +1408,12 @@ function openInsp(){
       '"><span style="color:'+r.color+'">'+esc(r.icon)+'</span> '+esc(r.name)+'</span>';
   }).join("")+'<span class="rolebtn" data-k="__none" style="'+(n.role?"":"border-color:#59668c;color:#fff;")+'">— まだ</span>'+
     '<span class="rolebtn" data-k="__new" style="border-style:dashed;color:#9fb6d0">＋ 自分で作る</span>';
-  row.querySelectorAll(".rolebtn").forEach(b=>b.onclick=()=>{
+  row.querySelectorAll(".rolebtn").forEach(b=>b.onclick=e=>{
+    if(e.altKey&&b.dataset.k!=="__new"){            /* ⌥クリック＝その意味の札を、書いた順に下へ出す */
+      e.preventDefault();
+      dumpRole=(dumpRole===b.dataset.k)?null:b.dataset.k;
+      renderRoleDump();return;
+    }
     if(b.dataset.k==="__new"){openRoles();openRoleForm(null);return;}
     const t=state.nodes[state.selected];if(!t)return;
     if(ed&&ed.id===t.id)commitEd();
@@ -1413,7 +1429,33 @@ function openInsp(){
   mi.value=n.memo||"";
   mi.oninput=()=>{state.nodes[state.selected].memo=mi.value;render();};
   renderLinkBox();
+  renderRoleDump();
 }
+/* 意味を ⌥クリックした時に出る「その意味の札ぜんぶ」。書いた順（札ができた順）にそのまま並べる */
+let dumpRole=null;
+function renderRoleDump(){
+  const box=$("roleDump"); if(!box)return;
+  if(!dumpRole){box.innerHTML="";return;}
+  const none=dumpRole==="__none";
+  const r=none?{icon:"—",name:"まだ意味がない",color:"#8fa0c8"}:db.roles.find(x=>x.id===dumpRole);
+  if(!r){dumpRole=null;box.innerHTML="";return;}
+  const list=Object.values(state.nodes)
+    .filter(n=>(none?!n.role:n.role===dumpRole)&&!isPH(n.text))
+    .sort((a,b)=>(+a.id.slice(1))-(+b.id.slice(1)));        /* 出た順＝札ができた順 */
+  box.innerHTML='<div class="dh" style="color:'+r.color+'"><span>'+esc(r.icon)+' '+esc(r.name)+'</span>'+
+    '<span style="color:var(--dim)">'+list.length+'枚・書いた順</span>'+
+    '<span style="flex:1"></span><button id="dumpClose" style="padding:2px 7px">閉じる</button></div>'+
+    '<div class="dbody">'+(list.length?list.map((n,i)=>
+      '<div class="drow" data-id="'+n.id+'" style="border-left-color:'+r.color+'">'+
+      '<span class="dno">'+(i+1)+'</span>'+esc(n.text)+
+      (n.memo?'<div class="dmemo">📝 '+esc(n.memo)+'</div>':"")+'</div>').join("")
+      :'<div class="drow" style="color:var(--dim);cursor:default">この意味の札はまだない</div>')+'</div>';
+  const c=$("dumpClose"); if(c)c.onclick=()=>{dumpRole=null;renderRoleDump();};
+  box.querySelectorAll(".drow[data-id]").forEach(el=>{
+    el.onclick=()=>{const id=el.dataset.id;if(!state.nodes[id])return;select(id);render();focusNode(id);};
+  });
+}
+
 /* 選んでいる札の「⌁ つなぎ」一覧。一言を書ける・外せる */
 let linkRows=[];
 function renderLinkBox(){
