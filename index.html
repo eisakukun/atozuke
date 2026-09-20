@@ -427,7 +427,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.6.2";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.6.3";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 const PH="（ここに書く）";              // 未記入あつかいの文字
@@ -912,12 +912,15 @@ function toWorld(cx,cy){
 function wireNode(el){
   let dragging=false,moved=false,sx,sy,ox,oy,wasSel=false,ptype="mouse";
   el.addEventListener("pointerdown",e=>{
-    if(e.shiftKey&&!linking&&state.selected&&state.nodes[state.selected]
-       &&state.selected!==el.dataset.id&&state.nodes[el.dataset.id]){
-      e.stopPropagation();e.preventDefault();          /* ⇧クリック＝選んでいる札と、この札をつなぐ */
-      if(ed)commitEd();
-      toggleLink(state.selected,el.dataset.id);
-      return;
+    if(e.shiftKey&&!linking&&state.nodes[el.dataset.id]){
+      const from=state.selected&&state.nodes[state.selected]?state.selected:null;
+      if(from&&from!==el.dataset.id){                  /* ⇧クリック＝選んでいる札と、この札をつなぐ */
+        e.stopPropagation();e.preventDefault();
+        if(ed)commitEd();
+        toggleLink(from,el.dataset.id);
+        return;
+      }
+      if(!from)toast("⇧でつなぐには、先につなぎ元の札をふつうにクリックして選んで");
     }
     if(linking&&state.nodes[el.dataset.id]){       /* ⌁ つなぎ待ち：札のどこを押してもここでつなぐ */
       e.stopPropagation();e.preventDefault();
@@ -959,6 +962,16 @@ function wireNode(el){
     let growing=false,over=null,startPt=null;
     grow.addEventListener("pointerdown",e=>{
       e.stopPropagation();e.preventDefault();
+      if(linking&&state.nodes[el.dataset.id]){         /* ⌁ つなぎ待ち：＋の上でも札としてつなぐ */
+        const b=el.dataset.id;
+        if(b!==linking)toggleLink(linking,b);else toast("同じ札です");
+        stopLink();return;
+      }
+      if(e.shiftKey){                                  /* ＋の上の⇧クリックも「つなぐ」。札は作らない */
+        const from=state.selected&&state.nodes[state.selected]?state.selected:null;
+        if(from&&from!==el.dataset.id&&state.nodes[el.dataset.id]){toggleLink(from,el.dataset.id);return;}
+        if(!from){toast("⇧でつなぐには、先につなぎ元の札をふつうにクリックして選んで");return;}
+      }
       if(growNow)growNow.cancel();                 /* 前の引っぱりが残っていたら片づける */
       growing=true;startPt={x:e.clientX,y:e.clientY};
       growNow={finish:finish,cancel:cancel};
