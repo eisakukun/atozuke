@@ -81,6 +81,12 @@
     paint-order:stroke;stroke:#08080f;stroke-width:3px;}
   body.linking #world .node{cursor:crosshair}
   body.linking #world .node:hover{box-shadow:0 0 0 2px #ff2e97,0 0 22px -4px #ff2e97}
+  svg#links .vwt{font-size:12px;font-family:var(--mono);paint-order:stroke;stroke:#08080f;stroke-width:4px;}
+  #viewList .vrow{display:flex;gap:6px;align-items:center;margin-top:5px;cursor:default}
+  #viewList .vrow input{flex:1;min-width:0;font-size:11.5px;padding:3px 6px}
+  #viewList .vdot{width:9px;height:9px;border-radius:50%;flex:none;box-shadow:0 0 8px 0 currentColor;background:currentColor}
+  #viewList .vn{font-size:9.5px;color:var(--dim);font-family:var(--mono);flex:none}
+  #viewSec h3 .vcap{float:right;font-size:9px;color:var(--dim);font-weight:400;letter-spacing:0;text-transform:none}
   #linkBox .lrow{display:flex;gap:6px;align-items:center;margin-top:6px}
   #linkBox .lrow input{flex:1;min-width:0;font-size:11px;padding:3px 6px}
   #linkBox .lnm{font-size:11px;color:#ff8fd6;max-width:95px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -285,6 +291,15 @@
 </div>
 
 <div id="insp">
+  <section id="viewSec">
+    <h3>🔭 俯瞰ライン<span class="vcap">行にカーソルを乗せると、その時の枠が出る</span></h3>
+    <div class="subtle">ここまでに書いたものを上から見て、ひとことで言うと？　書いた時点で「まだ入っていない札」が、その1本の受け持ちになる。</div>
+    <div style="display:flex;gap:5px;margin-top:7px">
+      <input type="text" id="viewInput" placeholder="例：結局ぜんぶ「怖い」から出てる" style="flex:1;min-width:0">
+      <button id="viewAdd" class="primary">書く</button>
+    </div>
+    <div id="viewList"></div>
+  </section>
   <section><h3>つながり</h3><div class="path" id="pathBox"></div></section>
   <section id="linkSec" style="display:none"><h3>⌁ つなぎ（横のつながり）</h3><div id="linkBox"></div></section>
   <section>
@@ -407,7 +422,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.5.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.6.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 const PH="（ここに書く）";              // 未記入あつかいの文字
@@ -530,7 +545,7 @@ function markSaved(ok){
 /* ===== マップ（タブ） ===== */
 function blankMap(name){
   const id="m"+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
-  const m={name:name||"新しい紙",nodes:{},view:{x:0,y:0,scale:1},selected:null,seq:1};
+  const m={name:name||"新しい紙",nodes:{},view:{x:0,y:0,scale:1},selected:null,seq:1,views:[]};
   const prev=state; state=m;
   const first=add(SEED_TEXT,-112,-40,null);
   m.selected=first;
@@ -633,6 +648,7 @@ function render(){
   });
   Object.values(existing).forEach(el=>el.remove());
   drawLinks(keep);
+  paintViewMarks();
   renderTagbar();
   renderTabs();
   save();
@@ -704,6 +720,109 @@ function updateLinkBtn(){
   $("linkBtn").classList.toggle("on",!!linking);
   $("lkShowBtn").classList.toggle("on",db.lkShow!==false);
 }
+/* =========================================================
+   🔭 俯瞰ライン
+   「ここまで書いたものを上から見ると何をしていたのか」を、都度その場で1行書く。
+   書いた時点で “まだどの俯瞰にも入っていない札” が、その1本の受け持ちになる。
+   マップにはふだん何も出さない。行にカーソルを乗せた／触れた時だけ、
+   その受け持ちを囲む枠が出る。色は意味の種類・つなぎの線と色相が離れたものを選ぶ。
+   ========================================================= */
+const VIEW_PALETTE=["#7dffd4","#9cc4ff","#ffe08a","#b9ff8a","#8ae8ff","#ffb38a","#d7a8ff","#ff9ce0"];
+const LINK_COLOR="#ff2e97";
+let hoverView=null, pinView=null, previewView=false;
+function viewsOf(){if(!Array.isArray(state.views))state.views=[];return state.views;}
+function hueOf(hex){
+  const m=/^#?([0-9a-f]{6})$/i.exec(String(hex||"").trim()); if(!m)return null;
+  const v=parseInt(m[1],16), r=(v>>16&255)/255, g=(v>>8&255)/255, b=(v&255)/255;
+  const mx=Math.max(r,g,b), mn=Math.min(r,g,b), d=mx-mn;
+  if(!d)return null;
+  let h = mx===r ? ((g-b)/d+(g<b?6:0)) : mx===g ? ((b-r)/d+2) : ((r-g)/d+4);
+  return h*60;
+}
+function farFromUsed(c){                        /* 既に意味で使っている色・つなぎの色と近すぎないか */
+  const h=hueOf(c); if(h==null)return true;
+  const used=db.roles.map(r=>r.color).concat([LINK_COLOR]);
+  return used.every(u=>{
+    const uh=hueOf(u); if(uh==null)return true;
+    let d=Math.abs(h-uh); d=Math.min(d,360-d);
+    return d>26;
+  });
+}
+function nextViewColor(){
+  const mine=new Set(viewsOf().map(v=>v.color));
+  const free=VIEW_PALETTE.filter(c=>!mine.has(c));
+  return free.find(farFromUsed) || free[0] || VIEW_PALETTE[viewsOf().length%VIEW_PALETTE.length];
+}
+function heldIds(){                             /* もうどれかの俯瞰が受け持っている札 */
+  const h=new Set();
+  viewsOf().forEach(v=>(v.ids||[]).forEach(id=>h.add(id)));
+  return h;
+}
+function freshIds(){                            /* まだどこにも入っていない＝次の俯瞰の受け持ち */
+  const h=heldIds();
+  return Object.keys(state.nodes).filter(id=>!h.has(id)&&!isPH(state.nodes[id].text));
+}
+function addView(){
+  const inp=$("viewInput"), t=inp.value.trim();
+  if(!t){inp.focus();return;}
+  const ids=freshIds();
+  if(!ids.length){toast("🔭 前の俯瞰のあと、まだ新しい札がない");return;}
+  snapshot();
+  viewsOf().unshift({id:"v"+Date.now().toString(36),text:t,ids:ids,color:nextViewColor(),at:Date.now()});
+  inp.value="";
+  renderViews();save();
+  toast("🔭 いま書いた "+ids.length+" 枚を受け持った");
+}
+function viewRect(ids){                         /* 受け持ちを囲む枠 */
+  const ns=(ids||[]).map(id=>state.nodes[id]).filter(Boolean);
+  if(!ns.length)return null;
+  let l=1e9,t=1e9,r=-1e9,b=-1e9;
+  ns.forEach(n=>{const x=boxOf(n);
+    l=Math.min(l,x.l);t=Math.min(t,x.t);r=Math.max(r,x.l+x.w);b=Math.max(b,x.t+x.h);});
+  const P=24;
+  return {x:l-P,y:t-P,w:(r-l)+P*2,h:(b-t)+P*2};
+}
+function showingView(){                         /* いま枠を出すべきもの */
+  if(previewView)return {text:$("viewInput").value.trim()||"（いま書いているぶん）",
+                         ids:freshIds(),color:nextViewColor()};
+  return hoverView||pinView||null;
+}
+function paintViewMarks(){
+  const v=showingView(), set=v?new Set(v.ids||[]):null;
+  world.querySelectorAll(".node").forEach(el=>{
+    const on=set&&set.has(el.dataset.id);
+    el.style.outline=on?("2px dashed "+v.color):"";
+    el.style.outlineOffset=on?"3px":"";
+  });
+}
+function touchView(v,on){                       /* 行にカーソルが乗った／外れた */
+  hoverView=on?v:(hoverView===v?null:hoverView);
+  drawLinks(visibleSet());paintViewMarks();
+}
+function renderViews(){
+  const list=$("viewList"), vs=viewsOf();
+  list.innerHTML=vs.map((v,i)=>
+    '<div class="vrow" data-i="'+i+'"><span class="vdot" style="color:'+v.color+'"></span>'+
+    '<input type="text" class="vtx" value="'+esc(v.text)+'">'+
+    '<span class="vn">'+(v.ids||[]).filter(id=>state.nodes[id]).length+'枚</span>'+
+    '<button class="vx" title="この俯瞰を消す">✕</button></div>').join("")
+    ||'<div class="subtle" style="margin-top:6px">まだ1本もない。いま書いたぶんを見て、ひとこと書くと1本目ができる。</div>';
+  list.querySelectorAll(".vrow").forEach(row=>{
+    const v=vs[+row.dataset.i];
+    row.onmouseenter=()=>touchView(v,true);
+    row.onmouseleave=()=>touchView(v,false);
+    const tx=row.querySelector(".vtx");
+    tx.onfocus=()=>{pinView=v;drawLinks(visibleSet());paintViewMarks();};
+    tx.onblur=()=>{if(pinView===v){pinView=null;drawLinks(visibleSet());paintViewMarks();}};
+    tx.oninput=()=>{v.text=tx.value;drawLinks(visibleSet());saveSoon();};
+    row.querySelector(".vx").onclick=()=>{
+      if(!confirm("この俯瞰を消します（札は消えません）"))return;
+      snapshot();state.views=vs.filter(x=>x!==v);
+      if(pinView===v)pinView=null; if(hoverView===v)hoverView=null;
+      renderViews();save();drawLinks(visibleSet());paintViewMarks();
+    };
+  });
+}
 /* 外へ大きく反る弧。枝と重ならないので、交差しても目で追える */
 function arcPath(A,B){
   const p=edgePoint(A,B.cx,B.cy), q=edgePoint(B,A.cx,A.cy);
@@ -743,7 +862,19 @@ function drawLinks(keep){
     lk+='<path class="lk'+(on?" on":"")+'" d="'+a.d+'" opacity="'+(hid?.06:on?1:.5)+'"/>';
     if(on&&l.label)lk+='<text class="lkt" x="'+a.mx+'" y="'+a.my+'">'+esc(l.label)+'</text>';
   });
-  svg.innerHTML=out+lk+ghost;
+  let vw="";
+  const sv=showingView();
+  if(sv){
+    const b=viewRect(sv.ids);
+    if(b){
+      vw='<rect x="'+b.x+'" y="'+b.y+'" width="'+b.w+'" height="'+b.h+'" rx="12" '+
+         'fill="'+tint(sv.color,.045)+'" stroke="'+sv.color+'" stroke-width="1.7" '+
+         'stroke-dasharray="11 7" opacity=".92" style="filter:drop-shadow(0 0 10px '+tint(sv.color,.5)+')"/>'+
+         '<text class="vwt" x="'+(b.x+14)+'" y="'+(b.y-9)+'" fill="'+sv.color+'">🔭 '+
+         esc(oneLine(sv.text).slice(0,40))+'</text>';
+    }
+  }
+  svg.innerHTML=out+lk+vw+ghost;
 }
 function applyView(){
   world.style.transform="translate("+state.view.x+"px,"+state.view.y+"px) scale("+state.view.scale+")";
@@ -1213,8 +1344,10 @@ function focusNode(id){
 /* ===== 右パネル ===== */
 function openInsp(){
   const id=state.selected,n=state.nodes[id];
-  if(!n){insp.classList.remove("open");return;}
-  insp.classList.add("open");
+  insp.classList.add("open");                    /* 俯瞰ラインだけは、札を選んでいなくても書ける */
+  renderViews();
+  insp.querySelectorAll("section").forEach(sec=>{if(sec.id!=="viewSec")sec.style.display=n?"":"none";});
+  if(!n)return;
   const chain=[];let c=n;
   while(c){chain.unshift(c);c=c.parent?state.nodes[c.parent]:null;}
   $("pathBox").innerHTML=chain.map((x,i)=>{
@@ -1591,6 +1724,19 @@ function buildMarkdown(){
   L.push("### 貼れる意味の一覧（この人が使っている見出し）","");
   db.roles.forEach(r=>L.push("- **"+r.icon+" "+r.name+"** … "+(r.hint||"")));
   L.push("");
+
+  const vws=[];
+  maps.forEach(m=>(m.views||[]).slice().reverse().forEach(v=>{
+    const c=(v.ids||[]).filter(id=>m.nodes[id]).length;
+    vws.push("- 「"+oneLine(v.text)+"」　……その直前に書いた "+c+" 枚について"+
+      (maps.length>1?"（"+mapTitle(m)+"）":""));
+  }));
+  if(vws.length){
+    L.push("### 🔭 本人が途中で「上から見て」言ったこと（俯瞰ライン）","");
+    L.push("書きながら、ときどき手を止めて **「ここまでの自分は何をしていたのか」** を一行で書いたものです。",
+           "書いた順に並んでいます。**本人が自分で気づいた要約**なので、こちらの読み取りより優先して扱ってください。","");
+    L.push(...vws,"");
+  }
 
   if(askList.length){
     L.push("## お願いしたいこと","");
@@ -1972,6 +2118,11 @@ $("newTab").onclick=()=>{const id=blankMap();switchTo(id);save();};
 $("clearBtn").onclick=clearAll;
 $("delOneBtn").onclick=delNode;
 $("cutBtn").onclick=cutParent;
+$("viewAdd").onclick=addView;
+$("viewInput").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();addView();}};
+$("viewInput").onfocus=()=>{previewView=true;drawLinks(visibleSet());paintViewMarks();};
+$("viewInput").onblur=()=>{previewView=false;drawLinks(visibleSet());paintViewMarks();};
+$("viewInput").oninput=()=>{if(previewView)drawLinks(visibleSet());};
 $("linkBtn").onclick=()=>startLink();
 $("linkBtn2").onclick=()=>startLink();
 $("lkShowBtn").onclick=()=>{db.lkShow=db.lkShow===false;updateLinkBtn();render();
@@ -2026,6 +2177,8 @@ function normalize(){
   Object.values(db.maps).forEach(m=>{
     if(!m.view)m.view={x:0,y:0,scale:1};
     if(!m.seq)m.seq=Object.keys(m.nodes).length+1;
+    if(!Array.isArray(m.views))m.views=[];
+    m.views.forEach(v=>{v.ids=(Array.isArray(v.ids)?v.ids:[]).filter(id=>m.nodes[id]);});
     Object.values(m.nodes).forEach(n=>{
       if(!("role"in n))n.role=null;
       if(!Array.isArray(n.tags))n.tags=[];
