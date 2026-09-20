@@ -82,8 +82,12 @@
   body.linking #world .node,body.shiftlink #world .node{cursor:crosshair}
   body.linking #world .node:hover,body.shiftlink #world .node:hover{box-shadow:0 0 0 2px #ff2e97,0 0 22px -4px #ff2e97}
   svg#links .vwt{font-size:12px;font-family:var(--mono);paint-order:stroke;stroke:#08080f;stroke-width:4px;}
-  #viewList .vrow{display:flex;gap:6px;align-items:center;margin-top:5px;cursor:default}
-  #viewList .vrow input{flex:1;min-width:0;font-size:11.5px;padding:3px 6px}
+  #viewList .vrow{display:flex;gap:6px;align-items:flex-start;margin-top:6px;cursor:default}
+  #viewList .vrow textarea{flex:1;min-width:0;font-size:11.5px;padding:4px 6px;line-height:1.5;
+    resize:none;overflow:hidden;font-family:inherit}
+  #viewList .vrow .vdot{margin-top:6px}
+  #viewList .vrow .vn{margin-top:5px}
+  #viewList .vrow .vx{flex:none;padding:2px 7px}
   #viewList .vdot{width:9px;height:9px;border-radius:50%;flex:none;box-shadow:0 0 8px 0 currentColor;background:currentColor}
   #viewList .vn{font-size:9.5px;color:var(--dim);font-family:var(--mono);flex:none}
   #viewSec h3 .vcap{float:right;font-size:9px;color:var(--dim);font-weight:400;letter-spacing:0;text-transform:none}
@@ -294,10 +298,11 @@
   <section id="viewSec">
     <h3>🔭 俯瞰ライン<span class="vcap">行にカーソルを乗せると、その時の枠が出る</span></h3>
     <div class="subtle">ここまでに書いたものを上から見て、ひとことで言うと？　書いた時点で「まだ入っていない札」が、その1本の受け持ちになる。</div>
-    <div style="display:flex;gap:5px;margin-top:7px">
-      <input type="text" id="viewInput" placeholder="例：結局ぜんぶ「怖い」から出てる" style="flex:1;min-width:0">
-      <button id="viewAdd" class="primary">書く</button>
+    <div style="display:flex;gap:5px;margin-top:7px;align-items:flex-start">
+      <textarea id="viewInput" rows="2" placeholder="例：結局ぜんぶ「怖い」から出てる" style="flex:1;min-width:0;resize:none;overflow:hidden"></textarea>
+      <button id="viewAdd" class="primary" style="flex:none">書く</button>
     </div>
+    <div class="subtle" style="margin-top:3px;font-size:10px">⏎＝改行　／　⇧⏎＝書く</div>
     <div id="viewList"></div>
   </section>
   <section><h3>つながり</h3><div class="path" id="pathBox"></div></section>
@@ -422,7 +427,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.6.1";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.6.2";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 const PH="（ここに書く）";              // 未記入あつかいの文字
@@ -769,7 +774,7 @@ function addView(){
   if(!ids.length){toast("🔭 前の俯瞰のあと、まだ新しい札がない");return;}
   snapshot();
   viewsOf().unshift({id:"v"+Date.now().toString(36),text:t,ids:ids,color:nextViewColor(),at:Date.now()});
-  inp.value="";
+  inp.value="";autoGrow(inp);
   renderViews();save();
   toast("🔭 いま書いた "+ids.length+" 枚を受け持った");
 }
@@ -799,11 +804,12 @@ function touchView(v,on){                       /* 行にカーソルが乗っ�
   hoverView=on?v:(hoverView===v?null:hoverView);
   drawLinks(visibleSet());paintViewMarks();
 }
+function autoGrow(t){if(!t)return;t.style.height="auto";t.style.height=Math.min(220,t.scrollHeight+2)+"px";}
 function renderViews(){
   const list=$("viewList"), vs=viewsOf();
   list.innerHTML=vs.map((v,i)=>
     '<div class="vrow" data-i="'+i+'"><span class="vdot" style="color:'+v.color+'"></span>'+
-    '<input type="text" class="vtx" value="'+esc(v.text)+'">'+
+    '<textarea class="vtx" rows="1">'+esc(v.text)+'</textarea>'+
     '<span class="vn">'+(v.ids||[]).filter(id=>state.nodes[id]).length+'枚</span>'+
     '<button class="vx" title="この俯瞰を消す">✕</button></div>').join("")
     ||'<div class="subtle" style="margin-top:6px">まだ1本もない。いま書いたぶんを見て、ひとこと書くと1本目ができる。</div>';
@@ -814,7 +820,8 @@ function renderViews(){
     const tx=row.querySelector(".vtx");
     tx.onfocus=()=>{pinView=v;drawLinks(visibleSet());paintViewMarks();};
     tx.onblur=()=>{if(pinView===v){pinView=null;drawLinks(visibleSet());paintViewMarks();}};
-    tx.oninput=()=>{v.text=tx.value;drawLinks(visibleSet());saveSoon();};
+    tx.oninput=()=>{v.text=tx.value;autoGrow(tx);drawLinks(visibleSet());saveSoon();};
+    autoGrow(tx);
     row.querySelector(".vx").onclick=()=>{
       if(!confirm("この俯瞰を消します（札は消えません）"))return;
       snapshot();state.views=vs.filter(x=>x!==v);
@@ -2132,7 +2139,10 @@ document.addEventListener("keydown",e=>{
 document.addEventListener("keyup",e=>{if(e.key==="Shift")document.body.classList.remove("shiftlink");});
 window.addEventListener("blur",()=>document.body.classList.remove("shiftlink"));
 $("viewAdd").onclick=addView;
-$("viewInput").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();addView();}};
+$("viewInput").onkeydown=e=>{                    /* ⏎はふつうに改行。⇧⏎で書く */
+  if(e.key==="Enter"&&e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();addView();}
+};
+$("viewInput").addEventListener("input",()=>autoGrow($("viewInput")));
 $("viewInput").onfocus=()=>{previewView=true;drawLinks(visibleSet());paintViewMarks();};
 $("viewInput").onblur=()=>{previewView=false;drawLinks(visibleSet());paintViewMarks();};
 $("viewInput").oninput=()=>{if(previewView)drawLinks(visibleSet());};
