@@ -115,6 +115,8 @@
 
   /* ===== ▢ 枠（ひとまとまりと見た組を囲う。中の札ごと動かせる） ===== */
   #frames{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none}
+  .frame.sel{border-style:solid;box-shadow:0 0 0 2px var(--fc,#6f7bd6),0 0 50px -12px var(--fc,#6f7bd6) inset}
+  .frame.sel .ftag{background:var(--fc,#6f7bd6);color:#07070d;font-weight:700}
   .frame{position:absolute;border:2px dashed var(--fc,#6f7bd6);border-radius:16px;pointer-events:none;
     box-shadow:0 0 30px -14px var(--fc,#6f7bd6) inset}
   .frame .fe{position:absolute;pointer-events:auto;cursor:grab}
@@ -492,7 +494,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.10.1";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.10.2";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 const ZMIN=.01, ZMAX=60;                 // 拡大・縮小の幅。1が等倍。事実上どこまでも寄れる／引ける
@@ -579,8 +581,14 @@ function isDesc(id,anc){let n=state.nodes[id];
 function nodeEl(id){return world.querySelector('.node[data-id="'+id+'"]');}
 
 /* ===== 履歴 ===== */
-function capture(){return JSON.stringify({nodes:state.nodes,seq:state.seq,selected:state.selected});}
-function restore(s){const o=JSON.parse(s);state.nodes=o.nodes;state.seq=o.seq;state.selected=o.selected;
+function capture(){return JSON.stringify({nodes:state.nodes,seq:state.seq,selected:state.selected,
+  frames:state.frames||[],views:state.views||[],notes:state.notes||[]});}
+function restore(s){const o=JSON.parse(s);
+  state.nodes=o.nodes;state.seq=o.seq;state.selected=o.selected;
+  if(o.frames)state.frames=o.frames;
+  if(o.views)state.views=o.views;
+  if(o.notes)state.notes=o.notes;
+  selFrame=null;
   render();openInsp();save();}
 function snapshot(){undoStack.push(capture());if(undoStack.length>80)undoStack.shift();
   redoStack.length=0;updateHistBtns();}
@@ -846,6 +854,7 @@ function renderNotes(){
    「この一帯はひとまとまり」と思ったところを囲う。中身は札＋その子ぜんぶ。
    名前と色を付けられる。枠のふち（か名前）を掴むと、中の札ごと動く。
    ========================================================= */
+let selFrame=null;                                  /* いま選んでいる枠 */
 const FRAME_PALETTE=["#6f7bd6","#4fb0a5","#c98f4f","#b06fa8","#5f9fd6","#8fa85f","#d66f7b","#7b6fd6"];
 function framesOf(){if(!Array.isArray(state.frames))state.frames=[];return state.frames;}
 function descIds(id){                               /* その札と、ぶら下がっている子ぜんぶ */
@@ -877,13 +886,13 @@ function addFrame(){
 function delFrame(f){
   snapshot();
   state.frames=framesOf().filter(x=>x!==f);
-  save();render();openInsp();toast("▢ 枠を外した（札は消えていない）");
+  save();render();openInsp();toast("▢ 枠を外した（札はそのまま・⌘Zで戻せる）");
 }
 function renderFrames(){
   const host=$("frames"); if(!host)return;
   host.innerHTML=framesOf().map(f=>{
     const b=frameRect(f.ids); if(!b)return "";
-    return '<div class="frame" data-id="'+f.id+'" style="left:'+b.x+'px;top:'+b.y+'px;width:'+b.w+
+    return '<div class="frame'+(selFrame===f.id?" sel":"")+'" data-id="'+f.id+'" style="left:'+b.x+'px;top:'+b.y+'px;width:'+b.w+
       'px;height:'+b.h+'px;--fc:'+f.color+';background:'+tint(f.color,.06)+'">'+
       '<div class="fe ft"></div><div class="fe fb"></div><div class="fe fl"></div><div class="fe fr"></div>'+
       '<div class="ftag">▢ '+esc(f.name||"枠")+'</div></div>';
@@ -915,7 +924,9 @@ function wireFrame(el){
   const end=()=>{
     if(!orig)return;
     orig=null;el.classList.remove("drag");
-    if(moved){save();render();}else{renderFrames();}
+    if(moved){save();render();}
+    else{selFrame=(selFrame===f.id)?null:f.id;renderFrames();   /* 動かさずに離した＝この枠を選ぶ */
+      if(selFrame)toast("▢ 枠を選んだ（delete で外せる／もう一度押すと解除）");}
   };
   el.querySelectorAll(".fe,.ftag").forEach(h=>{
     h.addEventListener("pointerdown",start);
@@ -943,7 +954,7 @@ function renderFrameList(){
     row.querySelectorAll(".fsw i").forEach(sw=>sw.onclick=()=>{
       f.color=sw.dataset.c;renderFrames();renderFrameList();save();
     });
-    row.querySelector(".fx").onclick=()=>{if(confirm("この枠を外します（札は消えません）"))delFrame(f);};
+    row.querySelector(".fx").onclick=()=>{delFrame(f);};
   });
 }
 
@@ -1762,6 +1773,7 @@ function endPointer(e){
     if(now-lastTap.t<350&&Math.hypot(ti.x-lastTap.x,ti.y-lastTap.y)<30){lastTap.t=0;addFree(ti.x,ti.y);return;}
     lastTap={t:now,x:ti.x,y:ti.y};
   }
+  if(selFrame){selFrame=null;renderFrames();}
   if(state.selected&&!review.on)select(null);                /* 空いている所をタップ＝選択をはずす */
 }
 stage.addEventListener("pointerup",endPointer);
@@ -2474,13 +2486,22 @@ document.addEventListener("keydown",e=>{
   if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA")return;
   if(document.querySelector(".modal.open")){if(e.key==="Escape")closeModals();return;}
   if(linking&&e.key==="Escape"){e.preventDefault();stopLink();toast("⌁ やめた");return;}
+  if(selFrame&&e.key==="Escape"){e.preventDefault();selFrame=null;renderFrames();return;}
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="z"){e.preventDefault();e.shiftKey?redo():undo();return;}
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="y"){e.preventDefault();redo();return;}
   if(e.altKey&&!e.metaKey&&!e.ctrlKey&&/^Digit[0-9]$/.test(e.code)&&state.selected){
     e.preventDefault();const rid=roleByDigit(+e.code.slice(5));if(rid!==undefined)setRole(state.selected,rid);return;}
   if(e.key==="Tab"){e.preventDefault();addChild(true);}
   else if(e.key==="Enter"){e.preventDefault();addSibling(true);}
-  else if(e.key==="Delete"||e.key==="Backspace"){e.preventDefault();delNode();}
+  else if(e.key==="Delete"||e.key==="Backspace"){
+    e.preventDefault();
+    if(selFrame){                                   /* 枠を選んでいるなら、枠だけ外す */
+      const f=framesOf().find(x=>x.id===selFrame);
+      selFrame=null;
+      if(f){delFrame(f);return;}
+    }
+    delNode();
+  }
   else if(e.key==="F2"){startEdit(nodeEl(state.selected));}
   else if(e.key==="Escape"){closeModals();if(review.on){endReview();render();}}
 });
