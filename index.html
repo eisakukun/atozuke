@@ -117,6 +117,7 @@
   #frames{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none}
   .frame.sel{border-style:solid;box-shadow:0 0 0 2px var(--fc,#6f7bd6),0 0 50px -12px var(--fc,#6f7bd6) inset}
   .frame.sel .ftag{background:var(--fc,#6f7bd6);color:#07070d;font-weight:700}
+  .node.inframe{outline:1px dashed var(--ic,#6f7bd6);outline-offset:3px}
   .frame{position:absolute;border:2px dashed var(--fc,#6f7bd6);border-radius:16px;pointer-events:none;
     box-shadow:0 0 30px -14px var(--fc,#6f7bd6) inset}
   .frame .fe{position:absolute;pointer-events:auto;cursor:grab}
@@ -494,7 +495,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.10.2";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.11.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 const ZMIN=.01, ZMAX=60;                 // 拡大・縮小の幅。1が等倍。事実上どこまでも寄れる／引ける
@@ -730,6 +731,7 @@ function render(){
   Object.values(existing).forEach(el=>el.remove());
   renderFrames();
   drawLinks(keep);
+  paintFrameMarks();
   paintViewMarks();
   renderTagbar();
   renderTabs();
@@ -877,11 +879,34 @@ function addFrame(){
   const ids=descIds(id);
   snapshot();
   const fs=framesOf();
-  fs.push({id:"f"+Date.now().toString(36),
+  fs.push({id:"f"+Date.now().toString(36), root:id,
            name:oneLine(state.nodes[id].text).slice(0,18)||"枠",
            color:FRAME_PALETTE[fs.length%FRAME_PALETTE.length], ids:ids});
+  selFrame=fs[fs.length-1].id;
   save();render();openInsp();
-  toast("▢ "+ids.length+"枚を枠にした（名前と色は右で変えられる）");
+  toast("▢ "+ids.length+"枚を枠にした。入れたくない札は ⌘クリックで、その先ごと外せる");
+}
+/* 枠の中の「ここから先は入れない」を切り替える。押した札とその子ぜんぶが対象。 */
+function toggleInFrame(f,id){
+  if(!state.nodes[id])return;
+  const sub=descIds(id), have=new Set(f.ids||[]);
+  const allIn=sub.every(x=>have.has(x));
+  snapshot();
+  if(allIn){
+    f.ids=(f.ids||[]).filter(x=>sub.indexOf(x)<0);
+    if(!f.ids.length){                               /* 空になったら枠ごと外す */
+      state.frames=framesOf().filter(x=>x!==f); selFrame=null;
+      save();render();openInsp();toast("▢ 中身がなくなったので枠も外した");return;
+    }
+    toast("▢ この札から先を枠から外した（⌘クリックで戻る）");
+  }else{
+    const root=f.root&&state.nodes[f.root]?descIds(f.root):null;
+    const add=root?sub.filter(x=>root.indexOf(x)>=0):sub;   /* 枠の持ち場の外は入れない */
+    if(!add.length){toast("▢ この札は、この枠の持ち場の外");return;}
+    f.ids=[...new Set((f.ids||[]).concat(add))];
+    toast("▢ この札から先を枠に入れた");
+  }
+  save();render();openInsp();
 }
 function delFrame(f){
   snapshot();
@@ -926,7 +951,8 @@ function wireFrame(el){
     orig=null;el.classList.remove("drag");
     if(moved){save();render();}
     else{selFrame=(selFrame===f.id)?null:f.id;renderFrames();   /* 動かさずに離した＝この枠を選ぶ */
-      if(selFrame)toast("▢ 枠を選んだ（delete で外せる／もう一度押すと解除）");}
+      paintFrameMarks();
+      if(selFrame)toast("▢ 枠を選んだ：⌘クリックで札を入れる／外す・delete で枠を外す");}
   };
   el.querySelectorAll(".fe,.ftag").forEach(h=>{
     h.addEventListener("pointerdown",start);
@@ -1025,6 +1051,15 @@ function showingView(){                         /* いま枠を出すべきも�
                          ids:freshIds(),color:nextViewColor()};
   return hoverView||pinView||null;
 }
+function paintFrameMarks(){
+  const f=selFrame?framesOf().find(x=>x.id===selFrame):null;
+  const set=f?new Set(f.ids||[]):null;
+  world.querySelectorAll(".node").forEach(el=>{
+    const on=set&&set.has(el.dataset.id);
+    el.classList.toggle("inframe",!!on);
+    if(on)el.style.setProperty("--ic",f.color);
+  });
+}
 function paintViewMarks(){
   const v=showingView(), set=v?new Set(v.ids||[]):null;
   world.querySelectorAll(".node").forEach(el=>{
@@ -1043,11 +1078,17 @@ function autoGrow(t,max){                          /* 中身の高さに合わ�
   if(!t)return;
   let tries=0;
   const go=()=>{
-    if(!t.isConnected)return;
-    const w=t.clientWidth;
+    if(!t.isConnected||!t.offsetParent)return;        /* まだ出ていない＝測っても意味がない */
+    const w=t.getBoundingClientRect().width;
+    if(w<40){requestAnimationFrame(go);return;}        /* 幅が決まるまで待つ */
+    t.style.width=w+"px";                             /* 測る間だけ幅を止める（伸びすぎの元） */
     t.style.height="auto";
-    t.style.height=Math.min(max||220,t.scrollHeight+2)+"px";
-    if(tries++<3)requestAnimationFrame(()=>{if(t.isConnected&&t.clientWidth!==w)go();});
+    const h=t.scrollHeight;
+    t.style.width="";
+    t.style.height=Math.min(max||220,h+2)+"px";
+    if(tries++<3)requestAnimationFrame(()=>{
+      if(t.isConnected&&Math.abs(t.getBoundingClientRect().width-w)>1)go();
+    });
   };
   requestAnimationFrame(go);
 }
@@ -1158,9 +1199,13 @@ function toWorld(cx,cy){
 function wireNode(el){
   let dragging=false,moved=false,sx,sy,ox,oy,wasSel=false,ptype="mouse";
   el.addEventListener("pointerdown",e=>{
-    if((e.metaKey||e.ctrlKey)&&!linking&&state.nodes[el.dataset.id]){   /* ⌘クリック＝この札と子ぜんぶを枠に */
+    if((e.metaKey||e.ctrlKey)&&!linking&&state.nodes[el.dataset.id]){
       e.stopPropagation();e.preventDefault();
-      select(el.dataset.id);addFrame();return;
+      if(selFrame){                                  /* 枠を選んでいる時＝その枠に入れる／外す */
+        const f=framesOf().find(x=>x.id===selFrame);
+        if(f){toggleInFrame(f,el.dataset.id);return;}
+      }
+      select(el.dataset.id);addFrame();return;       /* ふだん＝この札と子ぜんぶで新しい枠 */
     }
     if(e.shiftKey&&!linking&&state.nodes[el.dataset.id]){
       const from=state.selected&&state.nodes[state.selected]?state.selected:null;
@@ -1773,7 +1818,7 @@ function endPointer(e){
     if(now-lastTap.t<350&&Math.hypot(ti.x-lastTap.x,ti.y-lastTap.y)<30){lastTap.t=0;addFree(ti.x,ti.y);return;}
     lastTap={t:now,x:ti.x,y:ti.y};
   }
-  if(selFrame){selFrame=null;renderFrames();}
+  if(selFrame){selFrame=null;renderFrames();paintFrameMarks();}
   if(state.selected&&!review.on)select(null);                /* 空いている所をタップ＝選択をはずす */
 }
 stage.addEventListener("pointerup",endPointer);
@@ -2486,7 +2531,7 @@ document.addEventListener("keydown",e=>{
   if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA")return;
   if(document.querySelector(".modal.open")){if(e.key==="Escape")closeModals();return;}
   if(linking&&e.key==="Escape"){e.preventDefault();stopLink();toast("⌁ やめた");return;}
-  if(selFrame&&e.key==="Escape"){e.preventDefault();selFrame=null;renderFrames();return;}
+  if(selFrame&&e.key==="Escape"){e.preventDefault();selFrame=null;renderFrames();paintFrameMarks();return;}
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="z"){e.preventDefault();e.shiftKey?redo():undo();return;}
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="y"){e.preventDefault();redo();return;}
   if(e.altKey&&!e.metaKey&&!e.ctrlKey&&/^Digit[0-9]$/.test(e.code)&&state.selected){
@@ -2540,7 +2585,10 @@ function normalize(){
     if(!Array.isArray(m.views))m.views=[];
     if(!Array.isArray(m.frames))m.frames=[];
     if(!Array.isArray(m.notes))m.notes=[];
-    m.frames.forEach(f=>{f.ids=(Array.isArray(f.ids)?f.ids:[]).filter(id=>m.nodes[id]);});
+    m.frames.forEach(f=>{
+      f.ids=(Array.isArray(f.ids)?f.ids:[]).filter(id=>m.nodes[id]);
+      if(!f.root||!m.nodes[f.root])f.root=f.ids[0];
+    });
     m.frames=m.frames.filter(f=>f.ids.length);
     m.views.forEach(v=>{v.ids=(Array.isArray(v.ids)?v.ids:[]).filter(id=>m.nodes[id]);});
     Object.values(m.nodes).forEach(n=>{
