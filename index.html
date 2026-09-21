@@ -169,6 +169,14 @@
   .node.plain{border-left-style:dashed;border-left-color:#59668c;
     background:linear-gradient(170deg,#12121f 0%,#0a0a12 100%);}
   .node.rev{box-shadow:0 0 0 2px var(--gold),0 0 48px -6px var(--gold),0 8px 22px rgba(0,0,0,.6);}
+  /* ▶ スタートの札：角の丸いカプセル形＋黄緑。どこから書き始めたかが一目で分かる */
+  .node.start{border-radius:30px;padding:11px 20px 12px;border:2px solid #b6ff3a;
+    background:linear-gradient(170deg,#1d2a0c 0%,#0e1406 100%)!important;
+    box-shadow:0 0 0 4px rgba(182,255,58,.12),0 0 34px -6px #b6ff3a,0 8px 22px rgba(0,0,0,.6);}
+  .node.start.selected{box-shadow:0 0 0 4px rgba(182,255,58,.35),0 0 44px -4px #b6ff3a,0 8px 22px rgba(0,0,0,.6);}
+  .node.start .head{color:#b6ff3a}
+  .node.start .stb{font-weight:800;letter-spacing:.14em;background:#b6ff3a;color:#0b1004;
+    border-radius:999px;padding:0 7px;margin-right:3px}
   .node .head{display:flex;align-items:center;gap:5px;font-size:9.5px;color:var(--c,var(--plain));
     margin-bottom:4px;font-family:var(--mono);letter-spacing:.09em;opacity:.95;}
   .node.plain .head{color:#4d5878;}
@@ -392,6 +400,7 @@
   <section><h3>メモ</h3><textarea id="memoInput" placeholder="補足・思いついたこと"></textarea></section>
   <section>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button id="startBtn">▶ スタートにする</button>
       <button id="cutBtn">親から切る</button>
       <button id="linkBtn2">⌁ つなぐ</button>
       <button id="delOneBtn">この札を消す</button>
@@ -503,7 +512,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.12.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.13.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -702,8 +711,25 @@ function visibleSet(){
 }
 
 /* ===== 描画 ===== */
+/* スタートの札。自分で決めた札（start:true）があればそれ、無ければ一番最初に書いた親なしの札 */
+function startId(){
+  const ns=Object.values(state.nodes);
+  const m=ns.find(n=>n.start);if(m)return m.id;
+  const roots=ns.filter(n=>!n.parent||!state.nodes[n.parent]);
+  roots.sort((a,b)=>(+String(a.id).slice(1)||0)-(+String(b.id).slice(1)||0));
+  return roots.length?roots[0].id:null;
+}
+function setStart(id){
+  snapshot();
+  const was=startId()===id&&state.nodes[id].start;
+  Object.values(state.nodes).forEach(n=>{delete n.start;});
+  if(!was)state.nodes[id].start=true;
+  render();openInsp();
+  toast(was?"▶ スタートの印を元に戻した（最初の札に）":"▶ この札をスタートにした");
+}
 function render(){
   const keep=visibleSet();
+  const sid=startId();
   const existing={};
   world.querySelectorAll(".node").forEach(el=>existing[el.dataset.id]=el);
   Object.keys(state.nodes).forEach(id=>{
@@ -724,10 +750,12 @@ function render(){
     el.style.background=(rr&&rr.fill)?
       "linear-gradient(170deg,"+tint(rr.color,.28)+" 0%,"+tint(rr.color,.13)+" 100%)":"";
     el.classList.toggle("plain",!r);
+    el.classList.toggle("start",id===sid);
     el.classList.toggle("selected",state.selected===id);
     el.classList.toggle("dim",!!keep&&!keep.has(id));
     el.classList.toggle("rev",review.on&&review.list[review.i]===id);
-    el.querySelector(".head").innerHTML=r?(esc(r.icon)+" "+esc(r.name)):"—";
+    el.querySelector(".head").innerHTML=(id===sid?'<span class="stb">▶ START</span>':"")+
+      (r?(esc(r.icon)+" "+esc(r.name)):(id===sid?"":"—"));
     const txt=el.querySelector(".txt");
     if(!txt.hasAttribute("contenteditable")){
       txt.textContent=(n.text&&n.text.trim())?n.text:PH;
@@ -1724,6 +1752,9 @@ function openInsp(){
   const mi=$("memoInput");
   mi.value=n.memo||"";
   mi.oninput=()=>{state.nodes[state.selected].memo=mi.value;render();};
+  const sb=$("startBtn"),isS=startId()===n.id;
+  sb.textContent=isS?(n.start?"▶ スタートをやめる":"▶ これがスタート"):"▶ スタートにする";
+  sb.disabled=isS&&!n.start;
   renderLinkBox();
   renderRoleDump();
 }
@@ -1889,7 +1920,7 @@ stage.addEventListener("wheel",e=>{
   let dy=e.deltaY;
   if(e.deltaMode===1)dy*=16;else if(e.deltaMode===2)dy*=r.height;
   dy=Math.max(-50,Math.min(50,dy));                           /* 一度に大きく跳ばない */
-  const k=e.ctrlKey?.004:.0012;                               /* ctrl付き＝トラックパッドのピンチ */
+  const k=e.ctrlKey?.007:.0022;                               /* ctrl付き＝トラックパッドのピンチ */
   const base=zAnim?zAnim.ts:state.view.scale;
   zAnim={ts:Math.min(ZMAX,Math.max(ZMIN,base*Math.exp(-dy*k))),mx,my};
   if(!zRaf)zRaf=requestAnimationFrame(zStep);
@@ -1897,7 +1928,7 @@ stage.addEventListener("wheel",e=>{
 function zStep(){
   zRaf=0;if(!zAnim)return;
   const old=state.view.scale,t=zAnim.ts;
-  let ns=old*Math.pow(t/old,.18);                             /* 残りの2割弱ずつ近づく */
+  let ns=old*Math.pow(t/old,.3);                              /* 残りの3割ずつ近づく */
   if(Math.abs(Math.log(t/ns))<.002)ns=t;
   state.view.x=zAnim.mx-(zAnim.mx-state.view.x)*(ns/old);
   state.view.y=zAnim.my-(zAnim.my-state.view.y)*(ns/old);
@@ -2570,6 +2601,7 @@ $("newTab").onclick=()=>{const id=blankMap();switchTo(id);save();};
 $("clearBtn").onclick=clearAll;
 $("delOneBtn").onclick=delNode;
 $("cutBtn").onclick=cutParent;
+$("startBtn").onclick=()=>{if(state.selected)setStart(state.selected);};
 document.addEventListener("keydown",e=>{
   if(e.key==="Shift"&&!ed&&state.selected&&!document.querySelector(".modal.open"))
     document.body.classList.add("shiftlink");
