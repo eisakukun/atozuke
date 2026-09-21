@@ -50,7 +50,10 @@
     padding:5px 8px;overflow-x:auto;background:rgba(7,7,13,.95);border-bottom:1px solid var(--line);}
   .tab{display:flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid var(--line);
     border-radius:4px;font-size:12px;cursor:pointer;color:var(--muted);white-space:nowrap;
-    background:#0c0c17;font-family:var(--mono);}
+    background:#0c0c17;font-family:var(--mono);flex:none;max-width:130px;}
+  .tab .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+  .tab.on{max-width:210px;}
+  @media(max-width:700px){ .tab{max-width:96px} .tab.on{max-width:150px} }
   .tab.on{color:#fff;border-color:var(--gold);box-shadow:0 0 14px -5px var(--gold);background:#1a1206;}
   .tab .x{opacity:.5;font-size:11px;}
   .tab .x:hover{opacity:1;color:var(--warn);}
@@ -489,7 +492,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.10.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.10.1";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 const ZMIN=.01, ZMAX=60;                 // 拡大・縮小の幅。1が等倍。事実上どこまでも寄れる／引ける
@@ -638,9 +641,11 @@ function mapTitle(m){
 function renderTabs(){
   const html=db.order.map(id=>{
     const m=db.maps[id];if(!m)return"";
-    const t=mapTitle(m);
-    return '<span class="tab'+(id===db.cur?" on":"")+'" data-id="'+id+'">'+
-      esc(t.length>16?t.slice(0,16)+"…":t)+'<span class="x" data-x="'+id+'">✕</span></span>';
+    const t=oneLine(mapTitle(m));
+    const cut=id===db.cur?18:11;                 /* 開いている紙だけ少し長く見せる */
+    return '<span class="tab'+(id===db.cur?" on":"")+'" data-id="'+id+'" title="'+esc(t)+'">'+
+      '<span class="nm">'+esc(t.length>cut?t.slice(0,cut)+"…":t)+'</span>'+
+      '<span class="x" data-x="'+id+'">✕</span></span>';
   }).join("");
   if($("tabs")._h===html)return;
   $("tabs")._h=html;$("tabs").innerHTML=html;
@@ -1022,9 +1027,18 @@ function touchView(v,on){                       /* 行にカーソルが乗っ�
   drawLinks(visibleSet());paintViewMarks();
 }
 function autoGrow(t,max){                          /* 中身の高さに合わせる。
-  開いた直後は幅がまだ決まっていないことがあるので、1コマ待ってから測る */
+  開いた直後は幅がまだ決まっておらず、そのまま測ると縦に伸びすぎる。
+  1コマ待って測り、幅が変わっていたらもう一度だけ測り直す。 */
   if(!t)return;
-  requestAnimationFrame(()=>{t.style.height="auto";t.style.height=Math.min(max||220,t.scrollHeight+2)+"px";});
+  let tries=0;
+  const go=()=>{
+    if(!t.isConnected)return;
+    const w=t.clientWidth;
+    t.style.height="auto";
+    t.style.height=Math.min(max||220,t.scrollHeight+2)+"px";
+    if(tries++<3)requestAnimationFrame(()=>{if(t.isConnected&&t.clientWidth!==w)go();});
+  };
+  requestAnimationFrame(go);
 }
 function renderViews(){
   const list=$("viewList"), vs=viewsOf();
