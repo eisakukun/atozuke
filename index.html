@@ -125,6 +125,14 @@
     max-width:60vw;overflow:hidden;text-overflow:ellipsis}
   .frame.drag{opacity:.9}
   .frame.drag .ftag{cursor:grabbing}
+  #noteList .nrow{border:1px solid var(--line);border-left:3px solid var(--mag);border-radius:5px;
+    padding:9px 11px 10px;margin-top:8px;background:#0a0a14}
+  #noteList .nmeta{display:flex;gap:7px;align-items:center;font-size:9.5px;color:var(--dim);
+    font-family:var(--mono);margin-bottom:6px}
+  #noteList .nmeta button{padding:1px 7px;font-size:10px}
+  #noteList .ntx{font-size:12.5px;line-height:1.75;white-space:pre-wrap;word-break:break-word;color:#e2e8f8}
+  #noteList textarea{width:100%;font-size:12.5px;line-height:1.7;resize:none;overflow:hidden;min-height:80px}
+  #noteInput{width:100%;resize:none;overflow:hidden;font-size:12.5px;line-height:1.7;min-height:66px}
   #frameList .frow{display:flex;gap:6px;align-items:center;margin-top:6px}
   #frameList .frow input[type=text]{flex:1;min-width:0;font-size:11.5px;padding:3px 6px}
   #frameList .fsw{display:flex;gap:3px;flex:none}
@@ -349,6 +357,15 @@
     <h3>▢ 枠<span class="vcap">名前・色を変えられる／枠のふちを掴むと中ごと動く</span></h3>
     <div id="frameList"></div>
   </section>
+  <section id="noteSec">
+    <h3>🤖 AIに言われて、なるほどと思ったこと<span class="vcap">長いまま貼っていい</span></h3>
+    <textarea id="noteInput" placeholder="AIの返事から、効いた所をそのまま貼る（長くていい）"></textarea>
+    <div style="display:flex;gap:6px;align-items:center;margin-top:5px">
+      <button id="noteAdd" class="primary">入れる</button>
+      <span class="subtle" style="font-size:10px">⇧⏎でも入る</span>
+    </div>
+    <div id="noteList"></div>
+  </section>
   <section><h3>つながり</h3><div class="path" id="pathBox"></div></section>
   <section id="linkSec" style="display:none"><h3>⌁ そことそこつながるやん線</h3><div id="linkBox"></div></section>
   <section>
@@ -472,7 +489,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.9.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.10.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 const ZMIN=.01, ZMAX=60;                 // 拡大・縮小の幅。1が等倍。事実上どこまでも寄れる／引ける
@@ -596,7 +613,7 @@ function markSaved(ok){
 /* ===== マップ（タブ） ===== */
 function blankMap(name){
   const id="m"+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
-  const m={name:name||"新しい紙",nodes:{},view:{x:0,y:0,scale:1},selected:null,seq:1,views:[],frames:[]};
+  const m={name:name||"新しい紙",nodes:{},view:{x:0,y:0,scale:1},selected:null,seq:1,views:[],frames:[],notes:[]};
   const prev=state; state=m;
   const first=add(SEED_TEXT,-112,-40,null);
   m.selected=first;
@@ -776,6 +793,49 @@ function updateLinkBtn(){
   $("linkBtn").classList.toggle("on",!!linking);
   $("lkShowBtn").classList.toggle("on",db.lkShow!==false);
 }
+/* =========================================================
+   🤖 AIに言われて、なるほどと思ったこと
+   AIの返事のうち効いた所を、長いまま貼っておく置き場。紙ごとに持つ。
+   読むためのものなので、ふだんは文字として出し、直す時だけ欄になる。
+   ========================================================= */
+function notesOf(){if(!Array.isArray(state.notes))state.notes=[];return state.notes;}
+let noteEditing=null;
+function addNote(){
+  const inp=$("noteInput"), t=inp.value.trim();
+  if(!t){inp.focus();return;}
+  snapshot();
+  notesOf().unshift({id:"k"+Date.now().toString(36),text:t,at:Date.now()});
+  inp.value="";autoGrow(inp,700);
+  renderNotes();save();
+  toast("🤖 なるほどを1つ入れた");
+}
+function renderNotes(){
+  const box=$("noteList"); if(!box)return;
+  const ns=notesOf();
+  if(!ns.length){box.innerHTML='<div class="subtle" style="margin-top:7px">まだなし。AIの返事で「これだ」と思った所を、そのまま貼っておく。</div>';return;}
+  box.innerHTML=ns.map((k,i)=>{
+    const d=new Date(k.at||Date.now());
+    const when=(d.getMonth()+1)+"/"+d.getDate()+" "+d.toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"});
+    const head='<div class="nmeta"><span>'+when+'</span><span style="flex:1"></span>'+
+      '<button class="ned">'+(noteEditing===k.id?"✓ 直した":"✎ 直す")+'</button>'+
+      '<button class="nx">✕</button></div>';
+    const body=(noteEditing===k.id)
+      ? '<textarea class="ntxa">'+esc(k.text)+'</textarea>'
+      : '<div class="ntx">'+esc(k.text)+'</div>';
+    return '<div class="nrow" data-i="'+i+'">'+head+body+'</div>';
+  }).join("");
+  box.querySelectorAll(".nrow").forEach(row=>{
+    const k=ns[+row.dataset.i];
+    const ta=row.querySelector(".ntxa");
+    if(ta){autoGrow(ta,3000);ta.oninput=()=>{k.text=ta.value;autoGrow(ta,3000);saveSoon();};ta.focus();}
+    row.querySelector(".ned").onclick=()=>{noteEditing=(noteEditing===k.id)?null:k.id;renderNotes();save();};
+    row.querySelector(".nx").onclick=()=>{
+      if(!confirm("これを消します"))return;
+      snapshot();state.notes=ns.filter(x=>x!==k);renderNotes();save();
+    };
+  });
+}
+
 /* =========================================================
    ▢ 枠
    「この一帯はひとまとまり」と思ったところを囲う。中身は札＋その子ぜんぶ。
@@ -961,10 +1021,10 @@ function touchView(v,on){                       /* 行にカーソルが乗っ�
   hoverView=on?v:(hoverView===v?null:hoverView);
   drawLinks(visibleSet());paintViewMarks();
 }
-function autoGrow(t){                              /* 中身の高さに合わせる。
+function autoGrow(t,max){                          /* 中身の高さに合わせる。
   開いた直後は幅がまだ決まっていないことがあるので、1コマ待ってから測る */
   if(!t)return;
-  requestAnimationFrame(()=>{t.style.height="auto";t.style.height=Math.min(220,t.scrollHeight+2)+"px";});
+  requestAnimationFrame(()=>{t.style.height="auto";t.style.height=Math.min(max||220,t.scrollHeight+2)+"px";});
 }
 function renderViews(){
   const list=$("viewList"), vs=viewsOf();
@@ -1537,8 +1597,8 @@ function focusNode(id){
 function openInsp(){
   const id=state.selected,n=state.nodes[id];
   insp.classList.add("open");                    /* 俯瞰ラインだけは、札を選んでいなくても書ける */
-  renderViews();renderFrameList();
-  insp.querySelectorAll("section").forEach(sec=>{if(sec.id!=="viewSec"&&sec.id!=="frameSec")sec.style.display=n?"":"none";});
+  renderViews();renderFrameList();renderNotes();
+  insp.querySelectorAll("section").forEach(sec=>{if(sec.id!=="viewSec"&&sec.id!=="frameSec"&&sec.id!=="noteSec")sec.style.display=n?"":"none";});
   if(!n)return;
   const chain=[];let c=n;
   while(c){chain.unshift(c);c=c.parent?state.nodes[c.parent]:null;}
@@ -1964,6 +2024,17 @@ function buildMarkdown(){
     L.push(...vws,"");
   }
 
+  const kns=[];
+  maps.forEach(m=>(m.notes||[]).slice().reverse().forEach(k=>{
+    kns.push("- "+oneLine(k.text)+(maps.length>1?"　（"+mapTitle(m)+"）":""));
+  }));
+  if(kns.length){
+    L.push("### 🤖 前にAIに言われて、本人が「なるほど」と思って取っておいたこと","");
+    L.push("本人が自分で選んで残した言葉です。**ここが本人に効いた所**なので、同じ所を繰り返すより、",
+           "ここを踏まえて次を出してください。","");
+    L.push(...kns,"");
+  }
+
   if(askList.length){
     L.push("## お願いしたいこと","");
     askList.forEach(q=>L.push("- "+q));
@@ -2364,6 +2435,11 @@ document.addEventListener("keydown",e=>{
 document.addEventListener("keyup",e=>{if(e.key==="Shift")document.body.classList.remove("shiftlink");});
 window.addEventListener("blur",()=>document.body.classList.remove("shiftlink"));
 $("frameBtn").onclick=addFrame;
+$("noteAdd").onclick=addNote;
+$("noteInput").addEventListener("input",()=>autoGrow($("noteInput"),700));
+$("noteInput").onkeydown=e=>{
+  if(e.key==="Enter"&&e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();addNote();}
+};
 $("viewAdd").onclick=addView;
 $("viewInput").onkeydown=e=>{                    /* ⏎はふつうに改行。⇧⏎で書く */
   if(e.key==="Enter"&&e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();addView();}
@@ -2428,6 +2504,7 @@ function normalize(){
     if(!m.seq)m.seq=Object.keys(m.nodes).length+1;
     if(!Array.isArray(m.views))m.views=[];
     if(!Array.isArray(m.frames))m.frames=[];
+    if(!Array.isArray(m.notes))m.notes=[];
     m.frames.forEach(f=>{f.ids=(Array.isArray(f.ids)?f.ids:[]).filter(id=>m.nodes[id]);});
     m.frames=m.frames.filter(f=>f.ids.length);
     m.views.forEach(v=>{v.ids=(Array.isArray(v.ids)?v.ids:[]).filter(id=>m.nodes[id]);});
