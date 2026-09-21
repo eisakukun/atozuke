@@ -80,8 +80,16 @@
   svg#links .lk{fill:none;stroke:#ff2e97;stroke-width:2.1;stroke-linecap:round;stroke-dasharray:4 7;}
   svg#links .lk.on{stroke-width:2.7;filter:drop-shadow(0 0 7px #ff2e97);animation:lkflow 1.3s linear infinite;}
   @keyframes lkflow{to{stroke-dashoffset:-19;}}
-  svg#links .lkt{fill:#ff8fd6;font-size:10px;font-family:var(--mono);text-anchor:middle;
-    paint-order:stroke;stroke:#08080f;stroke-width:3px;}
+  svg#links .lkt{fill:#ff8fd6;font-size:12px;font-family:var(--mono);text-anchor:middle;dominant-baseline:middle;
+    paint-order:stroke;stroke:#08080f;stroke-width:4px;pointer-events:all;cursor:text;}
+  svg#links .lkt.add{fill:#ff2e97;opacity:.55;font-size:11px}
+  svg#links .lkt.add:hover{opacity:1}
+  /* 線そのものを触れるように、見えない太い当たり判定を重ねる（線の上をクリック＝ひとこと） */
+  svg#links .lkhit{fill:none;stroke:transparent;stroke-width:16;pointer-events:stroke;cursor:text;}
+  svg#links .lkhit:hover+.lk{stroke-width:3;opacity:1!important}
+  #lkEd{position:absolute;transform:translate(-50%,-50%);z-index:50;min-width:120px;max-width:320px;
+    background:#0b0b16;color:#ffd6ef;border:1.5px solid #ff2e97;border-radius:6px;padding:4px 8px;
+    font:13px var(--mono);text-align:center;outline:none;box-shadow:0 0 16px -2px #ff2e97;}
   body.linking #world .node,body.shiftlink #world .node{cursor:crosshair}
   body.linking #world .node:hover,body.shiftlink #world .node:hover{box-shadow:0 0 0 2px #ff2e97,0 0 22px -4px #ff2e97}
   svg#links .vwt{font-size:12px;font-family:var(--mono);paint-order:stroke;stroke:#08080f;stroke-width:4px;}
@@ -495,7 +503,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.11.1";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.12.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -764,6 +772,7 @@ function curve(A,B){
          (q.x+q.ux*k)+","+(q.y+q.uy*k)+" "+q.x+","+q.y;
 }
 let ghost="";
+let lkList=[],lkEditing=null;                 // 描いた⌁線の一覧（線の上に書く用）
 /* ＋から引っぱっている最中の目印。指やマウスが札の外・画面の外で離れても、
    線だけ残って札ができない、が起きないようにする（window で必ず拾う）。 */
 let growNow=null;
@@ -1149,14 +1158,20 @@ function drawLinks(keep){
     out+='<path d="'+d+'" fill="none" stroke="'+c+'" stroke-width="1.8" opacity="'+(dim?.07:.62)+'"'+
          (dim?"":' style="filter:drop-shadow(0 0 5px '+c+')"')+'/>';
   });
-  let lk="";
+  let lk="",lt="";
+  lkList=[];
   if(db.lkShow!==false) eachLink((n,m,l)=>{
     const a=arcPath(boxOf(n),boxOf(m));
     const hid=keep&&(!keep.has(n.id)&&!keep.has(m.id));
     const on=state.selected===n.id||state.selected===m.id;
-    lk+='<path class="lk'+(on?" on":"")+'" d="'+a.d+'" opacity="'+(hid?.06:on?1:.5)+'"/>';
-    if(on&&l.label)lk+='<text class="lkt" x="'+a.mx+'" y="'+a.my+'">'+esc(l.label)+'</text>';
+    const i=lkList.push({l,a})-1;
+    lk+='<path class="lkhit" data-lk="'+i+'" d="'+a.d+'"/>'+
+        '<path class="lk'+(on?" on":"")+'" d="'+a.d+'" opacity="'+(hid?.06:on?1:.5)+'"/>';
+    if(lkEditing===l)return;                                   /* 書いている最中は入力欄が上に乗る */
+    if(l.label)lt+='<text class="lkt" data-lk="'+i+'" x="'+a.mx+'" y="'+a.my+'" opacity="'+(hid?.15:on?1:.75)+'">'+esc(l.label)+'</text>';
+    else if(on&&!hid)lt+='<text class="lkt add" data-lk="'+i+'" x="'+a.mx+'" y="'+a.my+'">✎ ひとこと</text>';
   });
+  lk+=lt;                                                      /* 字は線より上に描く */
   let vw="";
   const sv=showingView();
   if(sv){
@@ -1742,6 +1757,42 @@ function renderRoleDump(){
 
 /* 選んでいる札の「⌁ つなぎ」一覧。一言を書ける・外せる */
 let linkRows=[];
+
+/* ⌁ つながるやん線の上に直接書く。線（か字）をクリック／タップ＝その場に入力欄 */
+function editLinkLabel(i){
+  const it=lkList[i];if(!it)return;
+  closeLinkEd(true);
+  lkEditing=it.l;
+  const inp=document.createElement("input");
+  inp.id="lkEd";inp.type="text";inp.value=it.l.label||"";inp.placeholder="ひとこと（例：これが効く）";
+  inp.style.left=it.a.mx+"px";inp.style.top=it.a.my+"px";
+  world.appendChild(inp);drawLinks(visibleSet());
+  const before=it.l.label||"";
+  inp.addEventListener("pointerdown",e=>e.stopPropagation());
+  inp.onkeydown=e=>{
+    e.stopPropagation();
+    if(e.isComposing||e.keyCode===229)return;
+    if(e.key==="Enter"){e.preventDefault();closeLinkEd(true);}
+    else if(e.key==="Escape"){e.preventDefault();inp.value=before;closeLinkEd(false);}
+  };
+  inp.onblur=()=>closeLinkEd(true);
+  inp._before=before;
+  setTimeout(()=>{inp.focus();inp.select();},0);
+}
+function closeLinkEd(commit){
+  const inp=document.getElementById("lkEd");
+  if(!inp){lkEditing=null;return;}
+  const l=lkEditing;lkEditing=null;inp.onblur=null;inp.remove();
+  if(l&&commit){
+    const v=inp.value.trim();
+    if(v!==(inp._before||"")){snapshot();l.label=v;save();}
+  }
+  drawLinks(visibleSet());renderLinkBox();
+}
+svg.addEventListener("click",e=>{
+  const t=e.target.closest("[data-lk]");if(!t)return;
+  e.stopPropagation();editLinkLabel(+t.dataset.lk);
+});
 function renderLinkBox(){
   const n=state.nodes[state.selected], sec=$("linkSec");
   if(!n){sec.style.display="none";return;}
