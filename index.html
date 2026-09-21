@@ -495,9 +495,10 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.11.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.11.1";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
+let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
 const ZMIN=.01, ZMAX=60;                 // 拡大・縮小の幅。1が等倍。事実上どこまでも寄れる／引ける
 const PH="（ここに書く）";              // 未記入あつかいの文字
 const SEED_TEXT="思いついたことをそのまま書く";   // 最初の1枚。書き換えるまでは「未記入」扱い
@@ -1639,6 +1640,7 @@ function treeLayout(vertical){
 }
 function runLayout(kind){snapshot();treeLayout(kind==="v");render();fit();}
 function fit(){
+  stopZoomAnim();
   const ns=Object.values(state.nodes);if(!ns.length)return;
   let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
   ns.forEach(n=>{const b=boxOf(n);
@@ -1771,6 +1773,7 @@ const pts=new Map();
 let gest=null,tapInfo=null,lastTap={t:0,x:0,y:0};
 function onEmpty(e){return e.target===stage||e.target===world||e.target===svg;}
 function beginGesture(){
+  stopZoomAnim();
   const a=[...pts.values()];
   if(a.length===1)gest={k:1,sx:a[0].x,sy:a[0].y,vx:state.view.x,vy:state.view.y};
   else if(a.length>=2){
@@ -1827,14 +1830,31 @@ stage.addEventListener("dblclick",e=>{
   if(!onEmpty(e)||lastPtype!=="mouse")return;
   addFree(e.clientX,e.clientY);
 });
+/* ホイール／トラックパッドの拡大縮小。1回ごとに1割ずつ跳ねると速すぎるので、
+   動かした量に比例して目標を決め、そこへ毎コマ少しずつ寄せる（ゆるやかに効く） */
 stage.addEventListener("wheel",e=>{
   e.preventDefault();
-  const r=stage.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top,old=state.view.scale;
-  const ns=Math.min(ZMAX,Math.max(ZMIN,old*(e.deltaY<0?1.1:.9)));
-  state.view.x=mx-(mx-state.view.x)*(ns/old);
-  state.view.y=my-(my-state.view.y)*(ns/old);
-  state.view.scale=ns;applyView();save();
+  const r=stage.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+  let dy=e.deltaY;
+  if(e.deltaMode===1)dy*=16;else if(e.deltaMode===2)dy*=r.height;
+  dy=Math.max(-50,Math.min(50,dy));                           /* 一度に大きく跳ばない */
+  const k=e.ctrlKey?.004:.0012;                               /* ctrl付き＝トラックパッドのピンチ */
+  const base=zAnim?zAnim.ts:state.view.scale;
+  zAnim={ts:Math.min(ZMAX,Math.max(ZMIN,base*Math.exp(-dy*k))),mx,my};
+  if(!zRaf)zRaf=requestAnimationFrame(zStep);
 },{passive:false});
+function zStep(){
+  zRaf=0;if(!zAnim)return;
+  const old=state.view.scale,t=zAnim.ts;
+  let ns=old*Math.pow(t/old,.18);                             /* 残りの2割弱ずつ近づく */
+  if(Math.abs(Math.log(t/ns))<.002)ns=t;
+  state.view.x=zAnim.mx-(zAnim.mx-state.view.x)*(ns/old);
+  state.view.y=zAnim.my-(zAnim.my-state.view.y)*(ns/old);
+  state.view.scale=ns;applyView();
+  if(ns===t){zAnim=null;save();return;}
+  zRaf=requestAnimationFrame(zStep);
+}
+function stopZoomAnim(){zAnim=null;if(zRaf){cancelAnimationFrame(zRaf);zRaf=0;}}
 
 /* =========================================================
    ◎ 意味を貼るモード（書き終わったあとの振り返り）
