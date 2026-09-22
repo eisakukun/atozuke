@@ -185,6 +185,9 @@
     box-shadow:0 0 22px -10px var(--c,var(--plain)),0 8px 20px rgba(0,0,0,.6);
     word-break:break-word;transition:opacity .15s,box-shadow .12s,border-color .12s;}
   .node:hover{border-color:rgba(0,229,255,.5);}
+  /* 2秒つかむ＝子ぜんぶ一緒に動かす */
+  .node.grab{outline:2px dashed var(--gold);outline-offset:4px;box-shadow:0 0 0 1.5px var(--gold),0 0 34px -4px var(--gold),0 8px 22px rgba(0,0,0,.6)!important;}
+  .node.grabkid{outline:1.5px dashed var(--gold);outline-offset:3px;}
   .node.selected{box-shadow:0 0 0 1.5px var(--c,var(--plain)),0 0 30px -6px var(--c,var(--plain)),0 8px 22px rgba(0,0,0,.6);}
   .node.dim{opacity:.12;}
   /* まだ意味を貼っていない札＝白っぽい素の紙 */
@@ -536,7 +539,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.15.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.16.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -1348,6 +1351,9 @@ function toWorld(cx,cy){
 /* ===== 札の操作 ===== */
 function wireNode(el){
   let dragging=false,moved=false,sx,sy,ox,oy,wasSel=false,ptype="mouse";
+  let holdT=null,group=null;                       /* 2秒つかんだら子ぜんぶ一緒に：group={id:[x,y]} */
+  const endHold=()=>{clearTimeout(holdT);holdT=null;
+    if(group){world.querySelectorAll(".node.grab,.node.grabkid").forEach(x=>x.classList.remove("grab","grabkid"));group=null;}};
   el.addEventListener("pointerdown",e=>{
     if(e.target.closest(".subb")&&!linking){         /* ⤵ バッジ＝そのまま下のノートへ */
       e.stopPropagation();e.preventDefault();goSub(el.dataset.id);return;
@@ -1391,26 +1397,47 @@ function wireNode(el){
     select(el.dataset.id);
     dragging=true;moved=false;sx=e.clientX;sy=e.clientY;
     const n=state.nodes[el.dataset.id];ox=n.x;oy=n.y;
-    el.setPointerCapture(e.pointerId);
+    try{el.setPointerCapture(e.pointerId);}catch(err){}
+    endHold();
+    holdT=setTimeout(()=>{                         /* 動かさずに2秒＝子もまとめてつかむ */
+      holdT=null;if(!dragging||moved||!state.nodes[el.dataset.id])return;
+      const ids=descIds(el.dataset.id);
+      if(ids.length<2){toast("この札には子がない");return;}
+      group={};
+      ids.forEach(id=>{const m=state.nodes[id];group[id]=[m.x,m.y];
+        const ne=nodeEl(id);if(ne)ne.classList.add(id===el.dataset.id?"grab":"grabkid");});
+      if(navigator.vibrate)try{navigator.vibrate(30);}catch(err){}
+      toast("✋ 子"+(ids.length-1)+"枚ごとつかんだ。そのまま動かす");
+    },2000);
   });
   el.addEventListener("pointermove",e=>{
     if(!dragging)return;
     const dx=(e.clientX-sx)/state.view.scale,dy=(e.clientY-sy)/state.view.scale;
     const th=ptype==="mouse"?2:8/state.view.scale;          /* 指は少しぶれてもタップ扱い */
-    if(!moved&&(Math.abs(dx)>th||Math.abs(dy)>th)){snapshot();moved=true;}
+    if(!moved&&(Math.abs(dx)>th||Math.abs(dy)>th)){snapshot();moved=true;clearTimeout(holdT);holdT=null;}
     const n=state.nodes[el.dataset.id];
     if(!moved||!n)return;
-    n.x=sn(ox+dx);n.y=sn(oy+dy);
-    el.style.left=n.x+"px";el.style.top=n.y+"px";
+    if(group){                                     /* まとめて：スナップは親だけで決め、子は同じだけずらす */
+      const gx=sn(ox+dx)-ox,gy=sn(oy+dy)-oy;
+      Object.keys(group).forEach(id=>{const m=state.nodes[id];if(!m)return;
+        m.x=group[id][0]+gx;m.y=group[id][1]+gy;
+        const ne=nodeEl(id);if(ne){ne.style.left=m.x+"px";ne.style.top=m.y+"px";}});
+      if(typeof renderFrames==="function")renderFrames();
+    }else{
+      n.x=sn(ox+dx);n.y=sn(oy+dy);
+      el.style.left=n.x+"px";el.style.top=n.y+"px";
+    }
     drawLinks(visibleSet());
   });
   el.addEventListener("pointerup",()=>{
     if(!dragging)return;
     dragging=false;
+    const wasGroup=!!group;endHold();
     if(moved){save();return;}
+    if(wasGroup)return;                              /* 2秒つかんで離しただけ＝書き始めない */
     if(ptype!=="mouse"&&wasSel)startEdit(el);                 /* 指：選んである札をもう一度タップ＝書く */
   });
-  el.addEventListener("pointercancel",()=>{dragging=false;});
+  el.addEventListener("pointercancel",()=>{dragging=false;endHold();});
   el.addEventListener("contextmenu",e=>{           /* 右クリック＝⤵ 下のノートの小窓 */
     if(!state.nodes[el.dataset.id]||e.target.closest("[contenteditable]"))return;
     e.preventDefault();e.stopPropagation();
