@@ -424,6 +424,7 @@
   <section>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
       <button id="startBtn">▶ スタートにする</button>
+      <button id="subBtn">⤵ 下のノート</button>
       <button id="cutBtn">親から切る</button>
       <button id="linkBtn2">⌁ つなぐ</button>
       <button id="delOneBtn">この札を消す</button>
@@ -535,7 +536,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.14.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.14.1";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -2711,6 +2712,7 @@ $("newTab").onclick=()=>{const id=blankMap();switchTo(id);save();};
 $("clearBtn").onclick=clearAll;
 $("delOneBtn").onclick=delNode;
 $("cutBtn").onclick=cutParent;
+$("subBtn").onclick=()=>{if(state.selected)openSubMenu(state.selected);};
 $("startBtn").onclick=()=>{if(state.selected)setStart(state.selected);};
 document.addEventListener("keydown",e=>{
   if(e.key==="Shift"&&!ed&&state.selected&&!document.querySelector(".modal.open"))
