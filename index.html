@@ -57,6 +57,28 @@
   .tab.on{color:#fff;border-color:var(--gold);box-shadow:0 0 14px -5px var(--gold);background:#1a1206;}
   .tab .x{opacity:.5;font-size:11px;}
   .tab .x:hover{opacity:1;color:var(--warn);}
+  /* ⤵ 下のノート：札の中のバッジ／上の道しるべ／⇧クリックの小窓 */
+  .node .subb{display:inline-flex;align-items:center;gap:4px;margin-left:auto;padding:1px 7px;border-radius:999px;
+    border:1px solid var(--cyan);color:#dff;background:rgba(0,229,255,.12);font-size:9.5px;cursor:pointer;
+    letter-spacing:0;box-shadow:0 0 10px -3px var(--cyan);white-space:nowrap;}
+  .node .subb:hover{background:rgba(0,229,255,.3);color:#fff;}
+  .node.hassub{box-shadow:4px 4px 0 -1px #0c0c17,5px 5px 0 0 var(--cyan),0 8px 22px rgba(0,0,0,.6);}
+  #crumb{display:none;align-items:center;gap:4px;margin-left:8px;padding-left:10px;border-left:1px solid var(--line);
+    font-size:12px;font-family:var(--mono);white-space:nowrap;flex:none;}
+  #crumb.on{display:flex;}
+  #crumb .cb{padding:4px 9px;border:1px solid var(--cyan);border-radius:4px;color:#bff;cursor:pointer;
+    background:rgba(0,229,255,.08);max-width:180px;overflow:hidden;text-overflow:ellipsis;}
+  #crumb .cb:hover{background:rgba(0,229,255,.25);color:#fff;}
+  #crumb .cb.up{font-weight:700;border-color:var(--gold);color:#fff;background:#1a1206;box-shadow:0 0 12px -4px var(--gold);}
+  #crumb .sep{color:var(--muted);}
+  #crumb .here{color:#fff;padding:4px 4px;max-width:200px;overflow:hidden;text-overflow:ellipsis;}
+  #subMenu{position:fixed;z-index:60;display:none;flex-direction:column;gap:5px;padding:9px;min-width:230px;
+    background:#0b0b16;border:1px solid var(--cyan);border-radius:6px;box-shadow:0 0 26px -6px var(--cyan),0 10px 30px rgba(0,0,0,.7);}
+  #subMenu.open{display:flex;}
+  #subMenu .t{font-size:10.5px;color:var(--muted);font-family:var(--mono);margin-bottom:2px;
+    max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  #subMenu button{text-align:left;}
+  #subMenu kbd{float:right;opacity:.55;font-size:10px;margin-left:10px;}
   #tagbar{position:fixed;top:calc(82px + var(--sat));left:0;right:0;z-index:28;display:flex;gap:5px;align-items:center;
     padding:5px 9px;overflow-x:auto;background:rgba(7,7,13,.9);border-bottom:1px solid var(--line);
     font-size:11px;color:var(--muted);font-family:var(--mono);min-height:30px;}
@@ -354,7 +376,8 @@
   <input type="file" id="fileInput" hidden accept=".json,.md,.txt">
 </div>
 
-<div id="tabbar"><span id="tabs" style="display:flex;gap:4px"></span></div>
+<div id="tabbar"><span id="tabs" style="display:flex;gap:4px"></span><span id="crumb"></span></div>
+<div id="subMenu"></div>
 <div id="tagbar"><span style="margin-right:4px">TAG</span><span id="tags" style="display:flex;gap:5px"></span></div>
 
 <div id="stage">
@@ -470,7 +493,7 @@
   <div class="subtle">この .md は 📂 で読み戻せる（末尾に元データが入っている）。</div>
 </div>
 
-<div id="hint">空いてる所をダブルクリック＝札 ／ 書いて⏎＝次の札　⇥＝下に札　⇧⏎＝改行　⌥数字＝意味を貼る ／ ⇧クリック＝つながるやん線（⌥⇧で外す） ／ ⌘Z</div>
+<div id="hint">空いてる所をダブルクリック＝札 ／ 書いて⏎＝次の札　⇥＝下に札　⇧⏎＝改行　⌥数字＝意味を貼る ／ ⇧クリック＝つながるやん線（⌥⇧で外す） ／ 選んだ札を⇧クリック＝⤵下のノート ／ ⌘Z</div>
 <div id="toast"></div>
 
 <div id="edbar">
@@ -512,7 +535,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.13.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.14.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -665,12 +688,91 @@ function mapTitle(m){
   const first=rs.sort((a,b)=>(+a.id.slice(1))-(+b.id.slice(1)))[0];
   return (first&&!isPH(first.text))?oneLine(first.text):(m.name||"名前のない紙");
 }
+/* ===== ⤵ 下のノート（札の一段下の紙）=====
+   紙に up={map,node}（どの紙のどの札の下か）、札に sub=紙id。
+   下のノートはタブには並べない＝上の道しるべとバッジから行き来する */
+function upOf(m){return m&&m.up&&db.maps[m.up.map]&&db.maps[m.up.map]!==m?m.up:null;}
+function subOf(n){return n&&n.sub&&db.maps[n.sub]&&upOf(db.maps[n.sub])?db.maps[n.sub]:null;}
+function chainOf(id){                                 /* 一番上の紙 → … → いまの紙 */
+  const out=[id],seen={[id]:1};
+  let m=db.maps[id];
+  while(upOf(m)&&!seen[m.up.map]){seen[m.up.map]=1;out.unshift(m.up.map);m=db.maps[m.up.map];}
+  return out;
+}
+function makeSub(nodeId,go){
+  const n=state.nodes[nodeId];if(!n)return;
+  if(subOf(n)){if(go)goSub(nodeId);return;}
+  const from=db.cur,txt=isPH(n.text)?"":(n.text||"");
+  const id=blankMap(oneLine(txt)||"下のノート");
+  db.order=db.order.filter(x=>x!==id).concat(id);
+  const m=db.maps[id];
+  m.up={map:from,node:nodeId};
+  const first=m.nodes[m.selected];                   /* 最初の札＝この札の続き。▶スタートにする */
+  if(first&&txt){first.text=txt;first.start=true;}
+  n.sub=id;
+  m.u=db.maps[from].u=Date.now();
+  closeSubMenu();
+  if(go){switchTo(id);const fid=m.selected;requestAnimationFrame(()=>focusNode(fid));toast("⤵ 「"+oneLine(txt||"この札").slice(0,20)+"」の下のノートへ。上の道しるべで戻れる");}
+  else{render();toast("⤵ 下のノートを作った（札のバッジから移れる）");}
+}
+function goSub(nodeId){
+  const m=subOf(state.nodes[nodeId]);if(!m)return;
+  closeSubMenu();
+  switchTo(n2id(m));
+}
+function n2id(m){return Object.keys(db.maps).find(k=>db.maps[k]===m);}
+function goUpTo(mapId,nodeId){                       /* 上の紙へ戻って、元の札を選んで真ん中に */
+  if(!db.maps[mapId])return;
+  switchTo(mapId);
+  if(nodeId&&state.nodes[nodeId]){select(nodeId);requestAnimationFrame(()=>focusNode(nodeId));}
+}
+function openSubMenu(nodeId){
+  const n=state.nodes[nodeId],el=nodeEl(nodeId);if(!n||!el)return;
+  const box=$("subMenu"),sub=subOf(n);
+  box.innerHTML='<div class="t">⤵ '+esc(oneLine(isPH(n.text)?"（まだ書いていない札）":n.text))+'</div>'+
+    (sub?'<button class="gold" data-a="go">⤵ 下のノートへ移る（'+Object.keys(sub.nodes).length+'枚）<kbd>⏎</kbd></button>'
+        :'<button class="gold" data-a="makego">⤵ 下のノートを作って移る<kbd>⏎</kbd></button>'+
+         '<button data-a="make">＋ 作るだけ（ここに残る）<kbd>⇧⏎</kbd></button>')+
+    '<button data-a="x">やめる<kbd>esc</kbd></button>';
+  box._node=nodeId;
+  const r=el.getBoundingClientRect();
+  box.classList.add("open");
+  const w=box.offsetWidth,h=box.offsetHeight;
+  box.style.left=Math.max(8,Math.min(innerWidth-w-8,r.left))+"px";
+  box.style.top=(r.bottom+8+h<innerHeight?r.bottom+8:Math.max(8,r.top-h-8))+"px";
+  box.querySelectorAll("button").forEach(b=>b.onclick=()=>subAct(b.dataset.a));
+}
+function subAct(a){
+  const id=$("subMenu")._node;
+  if(a==="go")goSub(id);else if(a==="makego")makeSub(id,true);else if(a==="make")makeSub(id,false);
+  closeSubMenu();
+}
+function closeSubMenu(){$("subMenu").classList.remove("open");}
+function renderCrumb(){
+  const c=$("crumb"),ch=chainOf(db.cur);
+  let html="";
+  if(ch.length>1){
+    html='<span class="sep">⤴</span>';
+    for(let i=0;i<ch.length-1;i++){
+      const m=db.maps[ch[i]],below=db.maps[ch[i+1]].up,n=m.nodes[below.node];
+      const nm=oneLine(mapTitle(m)),nn=n&&!isPH(n.text)?oneLine(n.text):"";
+      html+='<span class="cb'+(i===ch.length-2?" up":"")+'" data-m="'+ch[i]+'" data-n="'+esc(below.node)+'" title="'+
+        esc(nm+(nn?" › "+nn:""))+'">'+(i===ch.length-2?"⤴ ":"")+esc(nn||nm)+'</span><span class="sep">›</span>';
+    }
+    html+='<span class="here">'+esc(oneLine(mapTitle(state)))+'</span>';
+  }
+  if(c._h===html)return;
+  c._h=html;c.innerHTML=html;c.classList.toggle("on",!!html);
+  c.querySelectorAll(".cb").forEach(el=>el.onclick=()=>goUpTo(el.dataset.m,el.dataset.n));
+}
 function renderTabs(){
+  renderCrumb();
+  const top=chainOf(db.cur)[0];
   const html=db.order.map(id=>{
-    const m=db.maps[id];if(!m)return"";
+    const m=db.maps[id];if(!m||upOf(m))return"";
     const t=oneLine(mapTitle(m));
-    const cut=id===db.cur?18:11;                 /* 開いている紙だけ少し長く見せる */
-    return '<span class="tab'+(id===db.cur?" on":"")+'" data-id="'+id+'" title="'+esc(t)+'">'+
+    const cut=id===top?18:11;                    /* 開いている紙だけ少し長く見せる */
+    return '<span class="tab'+(id===top?" on":"")+'" data-id="'+id+'" title="'+esc(t)+'">'+
       '<span class="nm">'+esc(t.length>cut?t.slice(0,cut)+"…":t)+'</span>'+
       '<span class="x" data-x="'+id+'">✕</span></span>';
   }).join("");
@@ -751,11 +853,14 @@ function render(){
       "linear-gradient(170deg,"+tint(rr.color,.28)+" 0%,"+tint(rr.color,.13)+" 100%)":"";
     el.classList.toggle("plain",!r);
     el.classList.toggle("start",id===sid);
+    const sub=subOf(n);
+    el.classList.toggle("hassub",!!sub);
     el.classList.toggle("selected",state.selected===id);
     el.classList.toggle("dim",!!keep&&!keep.has(id));
     el.classList.toggle("rev",review.on&&review.list[review.i]===id);
     el.querySelector(".head").innerHTML=(id===sid?'<span class="stb">▶ START</span>':"")+
-      (r?(esc(r.icon)+" "+esc(r.name)):(id===sid?"":"—"));
+      (r?(esc(r.icon)+" "+esc(r.name)):(id===sid?"":"—"))+
+      (sub?'<span class="subb" title="下のノートへ移る">⤵ 下のノート '+Object.keys(sub.nodes).length+'枚</span>':"");
     const txt=el.querySelector(".txt");
     if(!txt.hasAttribute("contenteditable")){
       txt.textContent=(n.text&&n.text.trim())?n.text:PH;
@@ -1243,6 +1348,9 @@ function toWorld(cx,cy){
 function wireNode(el){
   let dragging=false,moved=false,sx,sy,ox,oy,wasSel=false,ptype="mouse";
   el.addEventListener("pointerdown",e=>{
+    if(e.target.closest(".subb")&&!linking){         /* ⤵ バッジ＝そのまま下のノートへ */
+      e.stopPropagation();e.preventDefault();goSub(el.dataset.id);return;
+    }
     if((e.metaKey||e.ctrlKey)&&!linking&&state.nodes[el.dataset.id]){
       e.stopPropagation();e.preventDefault();
       if(selFrame){                                  /* 枠を選んでいる時＝その枠に入れる／外す */
@@ -1259,7 +1367,9 @@ function wireNode(el){
         toggleLink(from,el.dataset.id,e.altKey);      /* ⌥も一緒に押していたら外す */
         return;
       }
-      if(!from)toast("⇧でつなぐには、先につなぎ元の札をふつうにクリックして選んで");
+      e.stopPropagation();e.preventDefault();         /* 選んでいない／自分自身を⇧クリック＝下のノートの小窓 */
+      if(ed)commitEd();
+      select(el.dataset.id);openSubMenu(el.dataset.id);return;
     }
     if(linking&&state.nodes[el.dataset.id]){       /* ⌁ つなぎ待ち：札のどこを押してもここでつなぐ */
       e.stopPropagation();e.preventDefault();
@@ -1309,7 +1419,7 @@ function wireNode(el){
       if(e.shiftKey){                                  /* ＋の上の⇧クリックも「つなぐ」。札は作らない */
         const from=state.selected&&state.nodes[state.selected]?state.selected:null;
         if(from&&from!==el.dataset.id&&state.nodes[el.dataset.id]){toggleLink(from,el.dataset.id,e.altKey);return;}
-        if(!from){toast("⇧でつなぐには、先につなぎ元の札をふつうにクリックして選んで");return;}
+        if(!from||from===el.dataset.id){select(el.dataset.id);openSubMenu(el.dataset.id);return;}
       }
       if(growNow)growNow.cancel();                 /* 前の引っぱりが残っていたら片づける */
       growing=true;startPt={x:e.clientX,y:e.clientY};
@@ -2609,6 +2719,9 @@ document.addEventListener("keydown",e=>{
 document.addEventListener("keyup",e=>{if(e.key==="Shift")document.body.classList.remove("shiftlink");});
 window.addEventListener("blur",()=>document.body.classList.remove("shiftlink"));
 $("frameBtn").onclick=addFrame;
+document.addEventListener("pointerdown",e=>{
+  if($("subMenu").classList.contains("open")&&!e.target.closest("#subMenu")&&!e.shiftKey)closeSubMenu();
+},true);
 $("noteAdd").onclick=addNote;
 $("noteInput").addEventListener("input",()=>autoGrow($("noteInput"),700));
 $("noteInput").onkeydown=e=>{
@@ -2633,6 +2746,12 @@ document.addEventListener("keydown",e=>{
   if(ed)return;
   if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA")return;
   if(document.querySelector(".modal.open")){if(e.key==="Escape")closeModals();return;}
+  if($("subMenu").classList.contains("open")){             /* ⤵ 小窓：⏎＝作って移る（あれば移る）／⇧⏎＝作るだけ */
+    if(e.key==="Enter"&&!e.isComposing){e.preventDefault();
+      const b=$("subMenu").querySelector(e.shiftKey?'[data-a="make"]':'[data-a="go"],[data-a="makego"]');
+      if(b)b.click();return;}
+    if(e.key==="Escape"){e.preventDefault();closeSubMenu();return;}
+  }
   if(linking&&e.key==="Escape"){e.preventDefault();stopLink();toast("⌁ やめた");return;}
   if(selFrame&&e.key==="Escape"){e.preventDefault();selFrame=null;renderFrames();paintFrameMarks();return;}
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="z"){e.preventDefault();e.shiftKey?redo():undo();return;}
