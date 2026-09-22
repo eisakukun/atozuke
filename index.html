@@ -494,7 +494,7 @@
   <div class="subtle">この .md は 📂 で読み戻せる（末尾に元データが入っている）。</div>
 </div>
 
-<div id="hint">空いてる所をダブルクリック＝札 ／ 書いて⏎＝次の札　⇥＝下に札　⇧⏎＝改行　⌥数字＝意味を貼る ／ ⇧クリック＝つながるやん線（⌥⇧で外す） ／ 選んだ札を⇧クリック＝⤵下のノート ／ ⌘Z</div>
+<div id="hint">空いてる所をダブルクリック＝札 ／ 書いて⏎＝次の札　⇥＝下に札　⇧⏎＝改行　⌥数字＝意味を貼る ／ ⇧クリック＝つながるやん線（⌥⇧で外す） ／ 右クリック＝⤵下のノート　⌥クリック＝下のノートへ移る ／ ⌘Z</div>
 <div id="toast"></div>
 
 <div id="edbar">
@@ -536,7 +536,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.14.1";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.15.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -1368,9 +1368,14 @@ function wireNode(el){
         toggleLink(from,el.dataset.id,e.altKey);      /* ⌥も一緒に押していたら外す */
         return;
       }
-      e.stopPropagation();e.preventDefault();         /* 選んでいない／自分自身を⇧クリック＝下のノートの小窓 */
+      if(!from)toast("⇧でつなぐには、先につなぎ元の札をふつうにクリックして選んで");
+    }
+    if(e.altKey&&!e.shiftKey&&!linking&&e.button===0&&state.nodes[el.dataset.id]){
+      e.stopPropagation();e.preventDefault();         /* ⌥クリック＝下のノートへ（無ければ作るか聞く） */
       if(ed)commitEd();
-      select(el.dataset.id);openSubMenu(el.dataset.id);return;
+      if(subOf(state.nodes[el.dataset.id]))goSub(el.dataset.id);
+      else{select(el.dataset.id);openSubMenu(el.dataset.id);}
+      return;
     }
     if(linking&&state.nodes[el.dataset.id]){       /* ⌁ つなぎ待ち：札のどこを押してもここでつなぐ */
       e.stopPropagation();e.preventDefault();
@@ -1406,6 +1411,12 @@ function wireNode(el){
     if(ptype!=="mouse"&&wasSel)startEdit(el);                 /* 指：選んである札をもう一度タップ＝書く */
   });
   el.addEventListener("pointercancel",()=>{dragging=false;});
+  el.addEventListener("contextmenu",e=>{           /* 右クリック＝⤵ 下のノートの小窓 */
+    if(!state.nodes[el.dataset.id]||e.target.closest("[contenteditable]"))return;
+    e.preventDefault();e.stopPropagation();
+    if(ed)commitEd();
+    select(el.dataset.id);openSubMenu(el.dataset.id);
+  });
   el.addEventListener("dblclick",e=>{e.stopPropagation();if(lastPtype==="mouse")startEdit(el);});
 
   el.querySelectorAll(".grow").forEach(grow=>{
@@ -1420,7 +1431,7 @@ function wireNode(el){
       if(e.shiftKey){                                  /* ＋の上の⇧クリックも「つなぐ」。札は作らない */
         const from=state.selected&&state.nodes[state.selected]?state.selected:null;
         if(from&&from!==el.dataset.id&&state.nodes[el.dataset.id]){toggleLink(from,el.dataset.id,e.altKey);return;}
-        if(!from||from===el.dataset.id){select(el.dataset.id);openSubMenu(el.dataset.id);return;}
+        if(!from){toast("⇧でつなぐには、先につなぎ元の札をふつうにクリックして選んで");return;}
       }
       if(growNow)growNow.cancel();                 /* 前の引っぱりが残っていたら片づける */
       growing=true;startPt={x:e.clientX,y:e.clientY};
@@ -2722,7 +2733,7 @@ document.addEventListener("keyup",e=>{if(e.key==="Shift")document.body.classList
 window.addEventListener("blur",()=>document.body.classList.remove("shiftlink"));
 $("frameBtn").onclick=addFrame;
 document.addEventListener("pointerdown",e=>{
-  if($("subMenu").classList.contains("open")&&!e.target.closest("#subMenu")&&!e.shiftKey)closeSubMenu();
+  if($("subMenu").classList.contains("open")&&!e.target.closest("#subMenu")&&e.button!==2)closeSubMenu();
 },true);
 $("noteAdd").onclick=addNote;
 $("noteInput").addEventListener("input",()=>autoGrow($("noteInput"),700));
