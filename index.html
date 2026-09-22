@@ -188,7 +188,7 @@
     box-shadow:0 0 22px -10px var(--c,var(--plain)),0 8px 20px rgba(0,0,0,.6);
     word-break:break-word;transition:opacity .15s,box-shadow .12s,border-color .12s;}
   .node:hover{border-color:rgba(0,229,255,.5);}
-  /* 1秒つかむ＝子ぜんぶ一緒に動かす */
+  /* 0.8秒つかむ＝子ぜんぶ一緒に動かす */
   .node.grab{outline:2px dashed var(--gold);outline-offset:4px;box-shadow:0 0 0 1.5px var(--gold),0 0 34px -4px var(--gold),0 8px 22px rgba(0,0,0,.6)!important;}
   .node.grabkid{outline:1.5px dashed var(--gold);outline-offset:3px;}
   .node.selected{box-shadow:0 0 0 1.5px var(--c,var(--plain)),0 0 30px -6px var(--c,var(--plain)),0 8px 22px rgba(0,0,0,.6);}
@@ -542,7 +542,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.17.1";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.17.2";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -1457,7 +1457,7 @@ function wireNode(el){
     const n=state.nodes[el.dataset.id];ox=n.x;oy=n.y;
     try{el.setPointerCapture(e.pointerId);}catch(err){}
     endHold();
-    holdT=setTimeout(()=>{                         /* 動かさずに1秒＝子もまとめてつかむ */
+    holdT=setTimeout(()=>{                         /* 動かさずに0.8秒＝子もまとめてつかむ */
       holdT=null;if(!dragging||moved||!state.nodes[el.dataset.id])return;
       const ids=descIds(el.dataset.id);
       if(ids.length<2){toast("この札には子がない");return;}
@@ -1466,7 +1466,7 @@ function wireNode(el){
         const ne=nodeEl(id);if(ne)ne.classList.add(id===el.dataset.id?"grab":"grabkid");});
       if(navigator.vibrate)try{navigator.vibrate(30);}catch(err){}
       toast("✋ 子"+(ids.length-1)+"枚ごとつかんだ。そのまま動かす");
-    },1000);
+    },800);
   });
   el.addEventListener("pointermove",e=>{
     if(!dragging)return;
