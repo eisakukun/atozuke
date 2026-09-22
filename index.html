@@ -78,6 +78,9 @@
   #subMenu .t{font-size:10.5px;color:var(--muted);font-family:var(--mono);margin-bottom:2px;
     max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   #subMenu button{text-align:left;}
+  #subMenu button.cur{border-color:var(--gold);color:#fff;box-shadow:0 0 14px -4px var(--gold);background:#1a1206;}
+  #subMenu button .now{float:right;font-size:10px;color:var(--gold);margin-left:10px;}
+  #subMenu .d{display:block;font-size:10px;color:var(--muted);font-weight:400;margin-top:2px;}
   #subMenu kbd{float:right;opacity:.55;font-size:10px;margin-left:10px;}
   #tagbar{position:fixed;top:calc(82px + var(--sat));left:0;right:0;z-index:28;display:flex;gap:5px;align-items:center;
     padding:5px 9px;overflow-x:auto;background:rgba(7,7,13,.9);border-bottom:1px solid var(--line);
@@ -539,7 +542,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.16.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.17.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -738,7 +741,7 @@ function openSubMenu(nodeId){
         :'<button class="gold" data-a="makego">⤵ 下のノートを作って移る<kbd>⏎</kbd></button>'+
          '<button data-a="make">＋ 作るだけ（ここに残る）<kbd>⇧⏎</kbd></button>')+
     '<button data-a="x">やめる<kbd>esc</kbd></button>';
-  box._node=nodeId;
+  box._node=nodeId;box._kind="sub";
   const r=el.getBoundingClientRect();
   box.classList.add("open");
   const w=box.offsetWidth,h=box.offsetHeight;
@@ -875,6 +878,7 @@ function render(){
     memo.textContent=n.memo||""; memo.style.display=n.memo?"":"none";
   });
   Object.values(existing).forEach(el=>el.remove());
+  growFrames();
   renderFrames();
   drawLinks(keep);
   paintFrameMarks();
@@ -1028,10 +1032,10 @@ function addFrame(){
   const fs=framesOf();
   fs.push({id:"f"+Date.now().toString(36), root:id,
            name:oneLine(state.nodes[id].text).slice(0,18)||"枠",
-           color:FRAME_PALETTE[fs.length%FRAME_PALETTE.length], ids:ids});
+           color:FRAME_PALETTE[fs.length%FRAME_PALETTE.length], ids:ids, mode:"fixed", cut:[]});
   selFrame=fs[fs.length-1].id;
   save();render();openInsp();
-  toast("▢ "+ids.length+"枚を枠にした。入れたくない札は ⌘クリックで、その先ごと外せる");
+  toast("▢ "+ids.length+"枚を枠にした。⌘クリックで外す／枠を右クリックでモード");
 }
 /* 枠の中の「ここから先は入れない」を切り替える。押した札とその子ぜんぶが対象。 */
 function toggleInFrame(f,id){
@@ -1041,6 +1045,7 @@ function toggleInFrame(f,id){
   snapshot();
   if(allIn){
     f.ids=(f.ids||[]).filter(x=>sub.indexOf(x)<0);
+    f.cut=(f.cut||[]).filter(x=>sub.indexOf(x)<0).concat(id);   /* 🌱でも、ここから先は勝手に戻さない */
     if(!f.ids.length){                               /* 空になったら枠ごと外す */
       state.frames=framesOf().filter(x=>x!==f); selFrame=null;
       save();render();openInsp();toast("▢ 中身がなくなったので枠も外した");return;
@@ -1051,9 +1056,60 @@ function toggleInFrame(f,id){
     const add=root?sub.filter(x=>root.indexOf(x)>=0):sub;   /* 枠の持ち場の外は入れない */
     if(!add.length){toast("▢ この札は、この枠の持ち場の外");return;}
     f.ids=[...new Set((f.ids||[]).concat(add))];
+    f.cut=(f.cut||[]).filter(x=>sub.indexOf(x)<0);
     toast("▢ この札から先を枠に入れた");
   }
   save();render();openInsp();
+}
+/* 枠のモード：fixed＝決めたところまで（あとから書いた子は入らない）／grow＝子も入り続ける */
+const FRAME_MODES=[
+  {k:"fixed",icon:"🔒",name:"決めたところまで",d:"あとから書いた子は、自分で ⌘クリックしないと入らない"},
+  {k:"grow", icon:"🌱",name:"子も入り続ける",d:"枠の中の札に書き足した子は、勝手に枠に入る"}];
+function growFrames(){                              /* 🌱の枠：中の札の子を拾い続ける（⌘クリックで外した先は除く） */
+  let changed=false;
+  framesOf().forEach(f=>{
+    if(f.mode!=="grow"||!f.root||!state.nodes[f.root])return;
+    const have=new Set(f.ids||[]),cut=new Set(f.cut||[]);
+    descIds(f.root).forEach(id=>{                    /* 親→子の順に並んでいるので1回なめれば足りる */
+      if(have.has(id)||cut.has(id))return;
+      const n=state.nodes[id];
+      if(n&&n.parent&&have.has(n.parent)){have.add(id);changed=true;}
+    });
+    if(changed)f.ids=[...have];
+  });
+  return changed;
+}
+function setFrameMode(f,k){
+  if(!f||(f.mode||"fixed")===k){closeSubMenu();return;}
+  snapshot();
+  f.mode=k;
+  const before=(f.ids||[]).length;
+  growFrames();
+  closeSubMenu();save();render();openInsp();
+  const m=FRAME_MODES.find(x=>x.k===k);
+  toast("▢ "+m.icon+" "+m.name+"にした"+(k==="grow"&&f.ids.length>before?"（子を"+(f.ids.length-before)+"枚入れた）":""));
+}
+function openFrameMenu(f,x,y){
+  const box=$("subMenu"),cur=f.mode||"fixed";
+  box.innerHTML='<div class="t">▢ '+esc(f.name||"枠")+' のモード　↑↓で選んで⏎</div>'+
+    FRAME_MODES.map(m=>'<button data-k="'+m.k+'"'+(m.k===cur?' class="cur"':'')+'>'+m.icon+' '+m.name+
+      (m.k===cur?'<span class="now">いま</span>':'')+'<span class="d">'+m.d+'</span></button>').join("");
+  box._kind="frame";box._frame=f.id;box._i=Math.max(0,FRAME_MODES.findIndex(m=>m.k===cur));
+  box.classList.add("open");
+  const w=box.offsetWidth,h=box.offsetHeight;
+  box.style.left=Math.max(8,Math.min(innerWidth-w-8,x))+"px";
+  box.style.top=Math.max(8,Math.min(innerHeight-h-8,y))+"px";
+  box.querySelectorAll("button").forEach(b=>b.onclick=()=>setFrameMode(framesOf().find(q=>q.id===f.id),b.dataset.k));
+}
+function frameMenuKey(e){                           /* ↑↓で動かす／⏎で決める */
+  const box=$("subMenu"),bs=[...box.querySelectorAll("button")];
+  if(e.key==="ArrowDown"||e.key==="ArrowUp"){
+    e.preventDefault();
+    box._i=(box._i+(e.key==="ArrowDown"?1:bs.length-1))%bs.length;
+    bs.forEach((b,i)=>b.classList.toggle("cur",i===box._i));return true;
+  }
+  if(e.key==="Enter"&&!e.isComposing){e.preventDefault();bs[box._i].click();return true;}
+  return false;
 }
 function delFrame(f){
   snapshot();
@@ -1067,7 +1123,7 @@ function renderFrames(){
     return '<div class="frame'+(selFrame===f.id?" sel":"")+'" data-id="'+f.id+'" style="left:'+b.x+'px;top:'+b.y+'px;width:'+b.w+
       'px;height:'+b.h+'px;--fc:'+f.color+';background:'+tint(f.color,.06)+'">'+
       '<div class="fe ft"></div><div class="fe fb"></div><div class="fe fl"></div><div class="fe fr"></div>'+
-      '<div class="ftag">▢ '+esc(f.name||"枠")+'</div></div>';
+      '<div class="ftag">'+(f.mode==="grow"?"🌱":"▢")+' '+esc(f.name||"枠")+'</div></div>';
   }).join("");
   host.querySelectorAll(".frame").forEach(wireFrame);
 }
@@ -1076,6 +1132,7 @@ function wireFrame(el){
   let sx=0,sy=0,orig=null,base=null,moved=false;
   const start=e=>{
     e.stopPropagation();e.preventDefault();
+    if(e.button!==0)return;                          /* 右クリックはモードの小窓に回す */
     sx=e.clientX;sy=e.clientY;moved=false;
     orig=f.ids.map(id=>state.nodes[id]).filter(Boolean).map(n=>({n:n,x:n.x,y:n.y}));
     base={x:parseFloat(el.style.left)||0,y:parseFloat(el.style.top)||0};
@@ -1106,6 +1163,7 @@ function wireFrame(el){
     h.addEventListener("pointermove",move);
     h.addEventListener("pointerup",end);
     h.addEventListener("pointercancel",end);
+    h.addEventListener("contextmenu",e=>{e.preventDefault();e.stopPropagation();openFrameMenu(f,e.clientX+4,e.clientY+4);});
   });
 }
 function renderFrameList(){
@@ -2786,6 +2844,10 @@ document.addEventListener("keydown",e=>{
   if(ed)return;
   if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA")return;
   if(document.querySelector(".modal.open")){if(e.key==="Escape")closeModals();return;}
+  if($("subMenu").classList.contains("open")&&$("subMenu")._kind==="frame"){
+    if(frameMenuKey(e))return;
+    if(e.key==="Escape"){e.preventDefault();closeSubMenu();return;}
+  }
   if($("subMenu").classList.contains("open")){             /* ⤵ 小窓：⏎＝作って移る（あれば移る）／⇧⏎＝作るだけ */
     if(e.key==="Enter"&&!e.isComposing){e.preventDefault();
       const b=$("subMenu").querySelector(e.shiftKey?'[data-a="make"]':'[data-a="go"],[data-a="makego"]');
@@ -2850,6 +2912,8 @@ function normalize(){
     m.frames.forEach(f=>{
       f.ids=(Array.isArray(f.ids)?f.ids:[]).filter(id=>m.nodes[id]);
       if(!f.root||!m.nodes[f.root])f.root=f.ids[0];
+      if(f.mode!=="grow")f.mode="fixed";
+      f.cut=(Array.isArray(f.cut)?f.cut:[]).filter(id=>m.nodes[id]);
     });
     m.frames=m.frames.filter(f=>f.ids.length);
     m.views.forEach(v=>{v.ids=(Array.isArray(v.ids)?v.ids:[]).filter(id=>m.nodes[id]);});
