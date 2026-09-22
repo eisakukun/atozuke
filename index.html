@@ -497,7 +497,7 @@
     <span style="flex:1"></span>
     <button id="aiRefresh">↻ 作り直す</button>
   </div>
-  <div class="subtle">この .md は 📂 で読み戻せる（末尾に元データが入っている）。</div>
+  <div class="subtle">コピーする文には元データを入れない（AIの邪魔になるので）。.md で保存したときだけ末尾に入り、📂 で読み戻せる。</div>
 </div>
 
 <div id="hint">空いてる所をダブルクリック＝札 ／ 書いて⏎＝次の札　⇥＝下に札　⇧⏎＝改行　⌥数字＝意味を貼る ／ ⇧クリック＝つながるやん線（⌥⇧で外す） ／ 右クリック＝⤵下のノート　⌥クリック＝下のノートへ移る ／ ⌘Z</div>
@@ -542,7 +542,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.17.2";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.18.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -2355,154 +2355,154 @@ function kidsIn(m,id){return Object.values(m.nodes).filter(n=>n.parent===id);}
 function rootsIn(m){return Object.values(m.nodes).filter(n=>!n.parent||!m.nodes[n.parent])
   .sort((a,b)=>(+a.id.slice(1))-(+b.id.slice(1)));}
 function roleById(id){return db.roles.find(r=>r.id===id)||null;}
-function lineOf(nd){
+/* AIに渡す文では、札を「#書いた順の番号」で指せるようにする。紙が2枚以上なら頭に紙の番号 */
+let mdTag=()=>"";
+function numOf(id){return +String(id).slice(1)||0;}
+function isJunk(t){const x=(t||"").replace(/\s/g,"");return isPH(t)||(x.length>=2&&/^(.)\1+$/u.test(x));}
+function keepNode(m,id){             /* 中身のない札・「あああ」だけの枝は渡さない */
+  const nd=m.nodes[id];if(!nd)return false;
+  return !isJunk(nd.text)||kidsIn(m,id).some(k=>keepNode(m,k.id));
+}
+function mapHasBody(m){return Object.values(m.nodes).some(n=>!isJunk(n.text));}
+function lineOf(m,nd){
   const r=roleById(nd.role);
-  const body=isPH(nd.text)?"（未記入）":oneLine(nd.text);
+  const body=isJunk(nd.text)?"（空の札）":oneLine(nd.text);
   const tg=(nd.tags||[]).length?"  "+nd.tags.map(x=>"#"+x).join(" "):"";
-  return (r?"["+r.icon+r.name+"] ":"[意味まだ] ")+body+tg;
+  return mdTag(m,nd.id)+" "+(r?"["+r.icon+r.name+"] ":"")+body+tg;
 }
 function outlineOf(m){
   const out=[];
   rootsIn(m).forEach(root=>{
     (function walk(id,d){
-      const nd=m.nodes[id];if(!nd)return;
-      out.push("  ".repeat(d)+"- "+lineOf(nd));
+      const nd=m.nodes[id];if(!nd||!keepNode(m,id))return;
+      out.push("  ".repeat(d)+"- "+lineOf(m,nd));
       if(nd.memo)out.push("  ".repeat(d+1)+"- メモ： "+oneLine(nd.memo));
-      kidsIn(m,id).forEach(k=>walk(k.id,d+1));
+      if(nd.sub&&db.maps[nd.sub]&&mapHasBody(db.maps[nd.sub]))
+        out.push("  ".repeat(d+1)+"- （この札の下にノートあり → 「"+mapTitle(db.maps[nd.sub])+"」の紙）");
+      kidsIn(m,id).sort((a,b)=>numOf(a.id)-numOf(b.id)).forEach(k=>walk(k.id,d+1));
     })(root.id,0);
   });
   return out.join("\n");
 }
 function buildMarkdown(){
-  const maps=db.order.map(id=>db.maps[id]).filter(Boolean);
+  const maps=db.order.map(id=>db.maps[id]).filter(Boolean).filter(mapHasBody);
+  const mi=new Map(maps.map((m,i)=>[m,i]));
+  mdTag=(m,id)=>"#"+(maps.length>1&&mi.get(m)>0?"紙"+(mi.get(m)+1)+"-":"")+numOf(id);
+  const where=m=>maps.length>1?"（"+mapTitle(m)+"）":"";
   const L=[];
   const askList=ASKS.filter(a=>asks.has(a.id)).map(a=>a.q);
   const free=$("askFree")?$("askFree").value.trim():"";
   if(free)askList.push(free);
 
+  const all=[];maps.forEach(m=>Object.values(m.nodes).forEach(nd=>{if(!isJunk(nd.text))all.push(nd);}));
+  const done=all.filter(n=>n.role).length;
+
   L.push("# 後づけマップ（自由に書いた図に、あとから意味を貼ったもの）","");
-  L.push("書き出し: "+new Date().toLocaleString("ja-JP")+" ／ ATOZUKE "+VER,"");
+  L.push("書いた本人が、この図についてあなたの意見を聞きたくて貼っています。**お願いは一番最後**に書いてあります。","");
+  L.push("札 "+all.length+" 枚（意味を貼った "+done+" 枚）／ 紙 "+maps.length+" 枚 ／ "+
+    new Date().toLocaleString("ja-JP")+" ／ ATOZUKE "+VER,"");
   L.push("## 読み方","");
-  L.push("- これは**先に型を決めずに自由に書き散らした図**です。順番も階層も、思いついた順のなごりでしかありません。",
-         "- 書き終わったあとで1枚ずつ振り返り、**「この札は何を出したかったのか」**という意味を後から貼っています。",
-         "- 各行の頭の `[◎目的]` などがその後づけの意味。`[意味まだ]` は、まだ意味を決めていない札です。",
-         "- 意味が付いていないこと自体も情報です（決めきれていない・どこにも属さない、ということ）。","");
-  L.push("### 貼れる意味の一覧（この人が使っている見出し）","");
-  db.roles.forEach(r=>L.push("- **"+r.icon+" "+r.name+"** … "+(r.hint||"")));
-  L.push("");
+  L.push("- **先に型を決めずに、思いついた順に書き散らした図**です。親子のつながりは「その札から連想した」くらいの意味で、論理の階層ではありません。",
+         "- 札の頭の `#12` は**書いた順の番号**（小さいほど先に書いた）。番号が飛んでいる所は消した札です。枝をまたいで番号を追うと、考えがどこへ飛んだかが見えます。",
+         "- `[◎目的]` などは、**書き終わってから本人が「この札は何を出したかったのか」を振り返って貼った意味**。1枚に1つだけ貼れます。",
+         "- 頭に `[ ]` が無い札は、まだ意味を貼っていない札です。決めきれていない・どこにも属さない、ということ自体も情報です。","");
+  const used=db.roles.map(r=>({r,c:all.filter(n=>n.role===r.id).length})).filter(x=>x.c);
+  if(used.length){
+    L.push("### この図で使われている意味","");
+    used.forEach(({r,c})=>L.push("- **"+r.icon+" "+r.name+"**（"+c+"枚） … "+
+      (r.hint||"本人が自分で足した印（説明は書いていない。名前どおりに受け取って）")));
+    L.push("");
+  }
 
   const vws=[];
   maps.forEach(m=>(m.views||[]).slice().reverse().forEach(v=>{
-    const c=(v.ids||[]).filter(id=>m.nodes[id]).length;
-    vws.push("- 「"+oneLine(v.text)+"」　……その直前に書いた "+c+" 枚について"+
-      (maps.length>1?"（"+mapTitle(m)+"）":""));
+    const ns=(v.ids||[]).filter(id=>m.nodes[id]).map(numOf).sort((a,b)=>a-b);
+    const rng=ns.length?mdTag(m,"n"+ns[0])+"〜"+mdTag(m,"n"+ns[ns.length-1]).replace(/^#(紙\d+-)?/,"#"):"";
+    vws.push("- "+(rng?"**"+rng+" を書いたところで：** ":"")+"「"+oneLine(v.text)+"」"+where(m));
   }));
   if(vws.length){
-    L.push("### 🔭 本人が途中で「上から見て」言ったこと（俯瞰ライン）","");
-    L.push("書きながら、ときどき手を止めて **「ここまでの自分は何をしていたのか」** を一行で書いたものです。",
-           "書いた順に並んでいます。**本人が自分で気づいた要約**なので、こちらの読み取りより優先して扱ってください。","");
+    L.push("### 🔭 本人が途中で手を止めて「上から見て」書いたこと","");
+    L.push("書いた順です。**本人が自分で気づいた要約**なので、あなたの読み取りより優先してください。","");
     L.push(...vws,"");
   }
 
   const kns=[];
-  maps.forEach(m=>(m.notes||[]).slice().reverse().forEach(k=>{
-    kns.push("- "+oneLine(k.text)+(maps.length>1?"　（"+mapTitle(m)+"）":""));
-  }));
+  maps.forEach(m=>(m.notes||[]).slice().reverse().forEach(k=>kns.push("- "+oneLine(k.text)+where(m))));
   if(kns.length){
-    L.push("### 🤖 前にAIに言われて、本人が「なるほど」と思って取っておいたこと","");
-    L.push("本人が自分で選んで残した言葉です。**ここが本人に効いた所**なので、同じ所を繰り返すより、",
-           "ここを踏まえて次を出してください。","");
+    L.push("### 🤖 前にAIに言われて、本人が「なるほど」と取っておいたこと","");
+    L.push("本人に**もう効いている所**です。同じことを言い直すより、ここを踏まえてその先を出してください。","");
     L.push(...kns,"");
   }
 
-  if(askList.length){
-    L.push("## お願いしたいこと","");
-    askList.forEach(q=>L.push("- "+q));
-    L.push("");
-  }
-
-  L.push("---","","## 1. 書いたままの形（つながり）","");
+  L.push("---","","## 1. 図そのもの（書いたままのつながり）","");
   maps.forEach(m=>{
-    const body=outlineOf(m);
-    L.push("### "+mapTitle(m),"");
-    L.push(body||"（空）","");
+    const up=m.up&&db.maps[m.up.map];
+    L.push("### "+(maps.length>1&&mi.get(m)>0?"紙"+(mi.get(m)+1)+"：":"")+mapTitle(m)+
+      (up?"（"+mdTag(up,m.up.node)+" の札の下のノート）":""),"");
+    L.push(outlineOf(m)||"（空）","");
   });
+
   const lks=[];
   maps.forEach(m=>Object.values(m.nodes).forEach(nd=>{
     (nd.links||[]).forEach(l=>{
       const t=m.nodes[l.to]; if(!t)return;
-      lks.push("- "+oneLine(nd.text)+"　⌁　"+oneLine(t.text)+
-        (l.label?"　…… "+oneLine(l.label):"")+(maps.length>1?"　（"+mapTitle(m)+"）":""));
+      lks.push("- "+mdTag(m,nd.id)+" "+oneLine(nd.text)+"　⌁　"+mdTag(m,t.id)+" "+oneLine(t.text)+
+        (l.label?"　…… "+oneLine(l.label):""));
     });
   }));
   if(lks.length){
-    L.push("### ⌁ そことそこつながるやん線（離れた札どうしの横のつながり）","");
-    L.push("親子の上下とは別に、本人があとから「ここと、ここはつながっている」と引いた線です。",
-           "階層には出てこない関係なので、読むときはここを重く見てください。","");
+    L.push("### ⌁ 離れた札どうしを本人が「つながってる」と結んだ線","");
+    L.push("親子とは別に、あとから気づいて引いた横のつながりです。**階層には出ないので重く見てください。**","");
     L.push(...lks,"");
   }
   const frs=[];
   maps.forEach(m=>(m.frames||[]).forEach(f=>{
-    const ns=(f.ids||[]).map(id=>m.nodes[id]).filter(Boolean).filter(n=>!isPH(n.text));
+    const ns=(f.ids||[]).map(id=>m.nodes[id]).filter(Boolean).filter(n=>!isJunk(n.text))
+      .sort((a,b)=>numOf(a.id)-numOf(b.id));
     if(!ns.length)return;
-    frs.push("- **"+(f.name||"枠")+"**（"+ns.length+"枚）： "+ns.map(n=>oneLine(n.text)).join(" ／ ")+
-      (maps.length>1?"　（"+mapTitle(m)+"）":""));
+    frs.push("- **「"+oneLine(f.name||"枠")+"」**（"+ns.length+"枚）： "+ns.map(n=>mdTag(m,n.id)+" "+oneLine(n.text).slice(0,18)).join(" ／ "));
   }));
   if(frs.length){
-    L.push("### ▢ 枠（本人が「この一帯はひとまとまり」と囲んだ組）","");
-    L.push("親子の上下とは別に、本人が手で囲んだまとまりです。**枠の名前は本人が付けたもの**なので、",
-           "そのまとまりを何だと思っているかがそこに出ています。","");
+    L.push("### ▢ 本人が「この一帯はひとまとまり」と囲んだ枠","");
+    L.push("枠の名前は本人が付けたもの。そのまとまりを何だと思っているかが出ています。","");
     L.push(...frs,"");
   }
 
-  L.push("---","","## 2. あとから貼った意味べつのまとめ","");
-  let anyRole=false;
-  db.roles.forEach(r=>{
-    const rows=[];
-    maps.forEach(m=>Object.values(m.nodes).forEach(nd=>{
-      if(nd.role!==r.id||isPH(nd.text))return;
-      const p=nd.parent?m.nodes[nd.parent]:null;
-      rows.push("- "+oneLine(nd.text)+
-        (p&&!isPH(p.text)?"　〈"+oneLine(p.text).slice(0,24)+" の下〉":"")+
-        ((nd.tags||[]).length?"  "+nd.tags.map(x=>"#"+x).join(" "):"")+
-        (maps.length>1?"　（"+mapTitle(m)+"）":""));
-      if(nd.memo)rows.push("  - メモ： "+oneLine(nd.memo));
-    }));
-    if(!rows.length)return;
-    anyRole=true;
-    L.push("### "+r.icon+" "+r.name+"（"+(r.hint||"")+"）","");
-    L.push(...rows,"");
-  });
-  if(!anyRole)L.push("（まだ意味を1つも貼っていない。◎ボタンで貼れる）","");
-
-  L.push("---","","## 3. まだ意味を貼っていない札","");
-  const plain=[];
-  maps.forEach(m=>Object.values(m.nodes).forEach(nd=>{
-    if(nd.role||isPH(nd.text))return;
-    plain.push("- "+oneLine(nd.text)+(maps.length>1?"　（"+mapTitle(m)+"）":""));
-  }));
-  L.push(plain.length?plain.join("\n"):"（なし）","");
+  if(done){
+    L.push("---","","## 2. 意味べつに抜き出したもの（1章の札の再掲。番号で1章と対応）","");
+    used.forEach(({r})=>{
+      L.push("### "+r.icon+" "+r.name,"");
+      maps.forEach(m=>Object.values(m.nodes).filter(nd=>nd.role===r.id&&!isJunk(nd.text))
+        .sort((a,b)=>numOf(a.id)-numOf(b.id))
+        .forEach(nd=>L.push("- "+mdTag(m,nd.id)+" "+oneLine(nd.text))));
+      L.push("");
+    });
+  }
 
   const tagMap={};
   maps.forEach(m=>Object.values(m.nodes).forEach(nd=>(nd.tags||[]).forEach(t=>{
-    (tagMap[t]=tagMap[t]||[]).push(isPH(nd.text)?"（未記入）":oneLine(nd.text));})));
+    if(!isJunk(nd.text))(tagMap[t]=tagMap[t]||[]).push(mdTag(m,nd.id));})));
   const tk=Object.keys(tagMap).sort();
-  L.push("---","","## 4. タグ索引","");
-  if(!tk.length)L.push("（タグなし）");
-  else tk.forEach(t=>L.push("- **#"+t+"**（"+tagMap[t].length+"）: "+tagMap[t].join(" / ")));
-  L.push("");
+  if(tk.length){
+    L.push("---","","## 3. タグ","");
+    tk.forEach(t=>L.push("- **#"+t+"**（"+tagMap[t].length+"）: "+tagMap[t].join(" ")));
+    L.push("");
+  }
 
-  const cnt=maps.reduce((s,m)=>s+Object.keys(m.nodes).length,0);
-  const done=maps.reduce((s,m)=>s+Object.values(m.nodes).filter(n=>n.role).length,0);
-  L.push("---","","## 5. 数","",
-    "- 札： "+cnt+" 枚 ／ 意味を貼った： "+done+" 枚 ／ まだ： "+(cnt-done)+" 枚",
-    "- 紙（タブ）： "+maps.length+" 枚","");
-
-  L.push("---","","## 6. 元データ（このファイルを 📂 で読み戻せる）","");
-  L.push("```json");
-  L.push(JSON.stringify({maps:db.maps,order:db.order,cur:db.cur,roles:db.roles}));
-  L.push("```","");
+  L.push("---","","## お願いしたいこと","");
+  if(askList.length)askList.forEach(q=>L.push("- "+q));
+  else L.push("- この図から読み取れることを教えて。");
+  L.push("","### 答え方","",
+    "- 言うことごとに、**根拠にした札を `#番号` で添えて**（どの札とどの札から言えるのか）。",
+    "- **本人が書いていること**と、**あなたの推測**は分けて。推測は推測だと言って。",
+    "- 一般論・励まし・よくある自己啓発ではなく、**この図の中にしかない具体的なつながり**を。",
+    "- 🔭と🤖は本人がもう気づいていること。言い直すだけにせず、その先を。",
+    "- たくさん並べるより、効きそうな順に絞って。","");
   return L.join("\n");
+}
+function mdWithData(text){             /* .md で保存するときだけ、読み戻し用の元データを末尾に足す */
+  return text.replace(/\s*$/,"")+"\n\n---\n\n## 元データ（ATOZUKEの 📂 で読み戻す用。AIは読まなくてよい）\n\n```json\n"+
+    JSON.stringify({maps:db.maps,order:db.order,cur:db.cur,roles:db.roles})+"\n```\n";
 }
 function renderAsks(){
   $("askRow").innerHTML=ASKS.map(a=>
@@ -2527,7 +2527,7 @@ $("aiCopy").onclick=()=>{
   else{document.execCommand("copy");done();}
 };
 $("aiMd").onclick=()=>{
-  const blob=new Blob([$("aiText").value],{type:"text/markdown;charset=utf-8"});
+  const blob=new Blob([mdWithData($("aiText").value)],{type:"text/markdown;charset=utf-8"});
   downloadBlob(blob,"atozuke-"+new Date().toISOString().slice(0,10)+".md");
 };
 $("aiClaude").onclick=()=>{$("aiCopy").click();window.open("https://claude.ai/new","_blank");};
