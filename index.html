@@ -487,6 +487,8 @@
 <div class="modal" id="ai" style="border-color:var(--mag);box-shadow:0 0 60px -14px var(--mag)">
   <h2 style="color:var(--mag)">🤖 AIに渡す
     <span class="sp"><button id="aiClose">閉じる</button></span></h2>
+  <div class="cap">どの紙を渡す（押して選ぶ・複数OK）</div>
+  <div class="askrow" id="aiMapRow"></div>
   <div class="cap">聞きたいこと（押すと下の文につく・複数OK）</div>
   <div class="askrow" id="askRow"></div>
   <input type="text" id="askFree" placeholder="自分のことばで聞きたいことを書く">
@@ -545,7 +547,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.18.1";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.19.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -2435,8 +2437,43 @@ function outlineOf(m){
   });
   return out.join("\n");
 }
+let aiPick=new Set();                          /* AIに渡す紙（上の紙のid）。開くたび「今の紙」で入れ直す */
+function topMaps(){return db.order.filter(id=>db.maps[id]&&!upOf(db.maps[id]));}
+function subsUnder(id,out){                    /* その紙にぶら下がる「⤵下のノート」も一緒に渡す */
+  db.order.forEach(k=>{const m=db.maps[k];
+    if(m&&m.up&&m.up.map===id&&!out.has(k)){out.add(k);subsUnder(k,out);}});
+}
+function aiPicked(){
+  const out=new Set();
+  aiPick.forEach(id=>{if(db.maps[id]){out.add(id);subsUnder(id,out);}});
+  return out;
+}
+function cardCount(id){
+  const m=db.maps[id];if(!m)return 0;
+  let n=Object.values(m.nodes).filter(x=>!isJunk(x.text)).length;
+  const subs=new Set();subsUnder(id,subs);
+  subs.forEach(k=>n+=Object.values(db.maps[k].nodes).filter(x=>!isJunk(x.text)).length);
+  return n;
+}
+function renderAiMaps(){
+  const tops=topMaps().filter(id=>cardCount(id)>0);
+  const all=tops.length>1&&tops.every(id=>aiPick.has(id));
+  const chip=(k,t,on)=>'<span class="ask'+(on?" on":"")+'" data-k="'+k+'">'+esc(t)+'</span>';
+  $("aiMapRow").innerHTML=
+    (tops.length>1?chip("__all","ぜんぶ（"+tops.length+"枚）",all):"")+
+    tops.map(id=>chip(id,mapTitle(db.maps[id])+"（"+cardCount(id)+"）",aiPick.has(id))).join("");
+  $("aiMapRow").querySelectorAll(".ask").forEach(b=>b.onclick=()=>{
+    const k=b.dataset.k;
+    if(k==="__all"){ all?(aiPick=new Set([topMaps().filter(id=>cardCount(id)>0)[0]])):(aiPick=new Set(tops)); }
+    else if(aiPick.has(k)){ if(aiPick.size>1)aiPick.delete(k); }   /* 最後の1枚は外せない */
+    else aiPick.add(k);
+    renderAiMaps();$("aiText").value=buildMarkdown();
+  });
+}
 function buildMarkdown(){
-  const maps=db.order.map(id=>db.maps[id]).filter(Boolean).filter(mapHasBody);
+  const pick=aiPicked();
+  const maps=db.order.filter(id=>pick.has(id)).map(id=>db.maps[id]).filter(Boolean).filter(mapHasBody);
+  if(!maps.length)return "（渡す紙に札がまだありません）";
   const mi=new Map(maps.map((m,i)=>[m,i]));
   mdTag=(m,id)=>"#"+(maps.length>1&&mi.get(m)>0?"紙"+(mi.get(m)+1)+"-":"")+numOf(id);
   const where=m=>maps.length>1?"（"+mapTitle(m)+"）":"";
@@ -2450,8 +2487,14 @@ function buildMarkdown(){
 
   L.push("# 後づけマップ（自由に書いた図に、あとから意味を貼ったもの）","");
   L.push("書いた本人が、この図についてあなたの意見を聞きたくて貼っています。**お願いは一番最後**に書いてあります。","");
-  L.push("札 "+all.length+" 枚（意味を貼った "+done+" 枚）／ 紙 "+maps.length+" 枚 ／ "+
+  const tops=topMaps().filter(id=>cardCount(id)>0);
+  const nTop=maps.filter(m=>!upOf(m)).length, nSub=maps.length-nTop;
+  L.push("札 "+all.length+" 枚（意味を貼った "+done+" 枚）／ 紙 "+nTop+" 枚"+
+    (nSub?"（＋その下のノート "+nSub+" 枚）":"")+" ／ "+
     new Date().toLocaleString("ja-JP")+" ／ ATOZUKE "+VER,"");
+  if(tops.length>nTop)
+    L.push("※ 本人はほかにも "+(tops.length-nTop)+" 枚の紙を書いていますが、**今回はここに出している紙だけ**を渡しています。"+
+           "見えていない紙の話は、あなたには分かりません。","");
   L.push("## 読み方","");
   L.push("- **先に型を決めずに、思いついた順に書き散らした図**です。親子のつながりは「その札から連想した」くらいの意味で、論理の階層ではありません。",
          "- 札の頭の `#12` は**書いた順の番号**（小さいほど先に書いた）。番号が飛んでいる所は消した札です。枝をまたいで番号を追うと、考えがどこへ飛んだかが見えます。",
@@ -2564,12 +2607,15 @@ function renderAsks(){
   });
 }
 function openAI(){
+  const top=chainOf(db.cur)[0];
+  aiPick=new Set([db.maps[top]?top:topMaps()[0]].filter(Boolean));   /* いま見ている紙だけ。増やしたければ押す */
+  renderAiMaps();
   renderAsks();
   $("aiText").value=buildMarkdown();
   openModal("ai");
 }
 $("askFree").addEventListener("input",()=>{$("aiText").value=buildMarkdown();});
-$("aiRefresh").onclick=()=>{$("aiText").value=buildMarkdown();toast("作り直した");};
+$("aiRefresh").onclick=()=>{renderAiMaps();$("aiText").value=buildMarkdown();toast("作り直した");};
 $("aiCopy").onclick=()=>{
   const t=$("aiText");t.select();t.setSelectionRange(0,999999);
   const done=()=>{toast("コピーした。ClaudeやGeminiに貼るだけ");};
