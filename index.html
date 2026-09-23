@@ -55,6 +55,9 @@
   .tab.on{max-width:210px;}
   @media(max-width:700px){ .tab{max-width:96px} .tab.on{max-width:150px} }
   .tab.on{color:#fff;border-color:var(--gold);box-shadow:0 0 14px -5px var(--gold);background:#1a1206;}
+  .tab .nm.edit{outline:none;color:#fff;border-bottom:1px solid var(--gold);cursor:text;
+    overflow:visible;text-overflow:clip;}
+  .tab:has(.nm.edit){max-width:none;}
   .tab .x{opacity:.5;font-size:11px;}
   .tab .x:hover{opacity:1;color:var(--warn);}
   /* ⤵ 下のノート：札の中のバッジ／上の道しるべ／⇧クリックの小窓 */
@@ -542,7 +545,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.18.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.18.1";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -691,6 +694,7 @@ function switchTo(id){
   render(); openInsp(); renderTabs(); applyView(); save();
 }
 function mapTitle(m){
+  if(m.title&&m.title.trim())return m.title.trim();   /* タブをダブルクリックで付けた名前が最優先 */
   const rs=Object.values(m.nodes).filter(n=>!n.parent||!m.nodes[n.parent]);
   const first=rs.sort((a,b)=>(+a.id.slice(1))-(+b.id.slice(1)))[0];
   return (first&&!isPH(first.text))?oneLine(first.text):(m.name||"名前のない紙");
@@ -772,21 +776,68 @@ function renderCrumb(){
   c._h=html;c.innerHTML=html;c.classList.toggle("on",!!html);
   c.querySelectorAll(".cb").forEach(el=>el.onclick=()=>goUpTo(el.dataset.m,el.dataset.n));
 }
+let tabEditing=null;                          /* 名前を書き換え中の紙id（描き直しで消さないため） */
+function autoTitle(m){                        /* 名前を付けなかった時に出る名前 */
+  const t=m.title;delete m.title;const v=mapTitle(m);if(t!==undefined)m.title=t;return v;
+}
+function renameTab(el,id){
+  const nm=el.querySelector(".nm"),m=db.maps[id];if(!m)return;
+  tabEditing=id;
+  nm.textContent=mapTitle(m);                 /* 省略の「…」を外して、全部見せてから書き換える */
+  nm.contentEditable="true";nm.classList.add("edit");
+  nm.focus();
+  const r=document.createRange();r.selectNodeContents(nm);
+  const sl=getSelection();sl.removeAllRanges();sl.addRange(r);
+  let done=false;
+  const fin=ok=>{
+    if(done)return;done=true;
+    nm.contentEditable="false";nm.classList.remove("edit");tabEditing=null;
+    if(ok){
+      const v=nm.textContent.replace(/\s+/g," ").trim();
+      if(v&&v!==autoTitle(m))m.title=v; else delete m.title;   /* 空にすると元の名前に戻る */
+      m.u=Date.now();save();
+      toast(m.title?"名前を付けた":"名前を元に戻した");
+    }
+    $("tabs")._h="";renderTabs();
+  };
+  nm.onkeydown=e=>{
+    e.stopPropagation();                                 /* 札のキー操作（⏎で次の札 など）に流さない */
+    if(e.isComposing||e.keyCode===229)return;            /* 日本語を変換している最中の⏎は確定だけ */
+    const k=e.key;
+    if(k==="Enter"||k==="Return"||e.keyCode===13){e.preventDefault();fin(true);}
+    else if(k==="Escape"||k==="Esc"){e.preventDefault();fin(false);}
+  };
+  nm.onblur=()=>fin(true);
+}
 function renderTabs(){
   renderCrumb();
+  if(tabEditing)return;                       /* 名前を書いている途中は描き直さない */
   const top=chainOf(db.cur)[0];
   const html=db.order.map(id=>{
     const m=db.maps[id];if(!m||upOf(m))return"";
     const t=oneLine(mapTitle(m));
     const cut=id===top?18:11;                    /* 開いている紙だけ少し長く見せる */
-    return '<span class="tab'+(id===top?" on":"")+'" data-id="'+id+'" title="'+esc(t)+'">'+
+    return '<span class="tab'+(id===top?" on":"")+'" data-id="'+id+'" title="'+esc(t)+' ／ ダブルクリックで名前を変える">'+
       '<span class="nm">'+esc(t.length>cut?t.slice(0,cut)+"…":t)+'</span>'+
       '<span class="x" data-x="'+id+'">✕</span></span>';
   }).join("");
   if($("tabs")._h===html)return;
   $("tabs")._h=html;$("tabs").innerHTML=html;
   $("tabs").querySelectorAll(".tab").forEach(el=>{
-    el.onclick=e=>{ if(e.target.dataset.x){delMap(e.target.dataset.x);return;} switchTo(el.dataset.id); };
+    el.onclick=e=>{
+      if(el._held&&Date.now()-el._held<600){el._held=0;return;}   /* 長おしで名前を変えた直後は、紙を切り替えない */
+      if(e.target.dataset.x){delMap(e.target.dataset.x);return;}
+      switchTo(el.dataset.id);
+    };
+    el.ondblclick=e=>{ if(e.target.dataset.x)return; e.preventDefault(); renameTab(el,el.dataset.id); };
+    let hold=0;                                  /* スマホ：0.6秒おさえても名前を変えられる */
+    const stopHold=()=>{clearTimeout(hold);hold=0;};
+    el.addEventListener("pointerdown",e=>{
+      if(e.pointerType==="mouse"||e.target.dataset.x)return;
+      stopHold();
+      hold=setTimeout(()=>{hold=0;el._held=Date.now();renameTab(el,el.dataset.id);},600);
+    });
+    ["pointerup","pointermove","pointercancel","pointerleave"].forEach(k=>el.addEventListener(k,stopHold));
   });
 }
 function delMap(id){
