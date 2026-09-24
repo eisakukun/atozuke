@@ -489,6 +489,8 @@
     <span class="sp"><button id="aiClose">閉じる</button></span></h2>
   <div class="cap">どの紙を渡す（押して選ぶ・複数OK）</div>
   <div class="askrow" id="aiMapRow"></div>
+  <div class="cap" id="aiBlockCap" style="display:none">その紙のどのスタート（かたまり）を渡す</div>
+  <div class="askrow" id="aiBlockRow" style="display:none"></div>
   <div class="cap">聞きたいこと（押すと下の文につく・複数OK）</div>
   <div class="askrow" id="askRow"></div>
   <input type="text" id="askFree" placeholder="自分のことばで聞きたいことを書く">
@@ -547,7 +549,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.19.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.20.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -874,24 +876,30 @@ function visibleSet(){
 
 /* ===== 描画 ===== */
 /* スタートの札。自分で決めた札（start:true）があればそれ、無ければ一番最初に書いた親なしの札 */
-function startId(){
-  const ns=Object.values(state.nodes);
-  const m=ns.find(n=>n.start);if(m)return m.id;
-  const roots=ns.filter(n=>!n.parent||!state.nodes[n.parent]);
+function startIds(m){                        /* スタートの札は何枚あってもいい（＝1枚の紙に別々の始まり） */
+  const mm=m||state,ns=Object.values(mm.nodes);
+  const marked=ns.filter(n=>n.start).map(n=>n.id);
+  if(marked.length)return new Set(marked);
+  const roots=ns.filter(n=>!n.parent||!mm.nodes[n.parent]);
   roots.sort((a,b)=>(+String(a.id).slice(1)||0)-(+String(b.id).slice(1)||0));
-  return roots.length?roots[0].id:null;
+  return new Set(roots.length?[roots[0].id]:[]);
 }
+function startId(){const s=startIds();return s.size?[...s][0]:null;}
 function setStart(id){
   snapshot();
-  const was=startId()===id&&state.nodes[id].start;
-  Object.values(state.nodes).forEach(n=>{delete n.start;});
-  if(!was)state.nodes[id].start=true;
+  const n=state.nodes[id];if(!n)return;
+  const auto=!Object.values(state.nodes).some(x=>x.start);   /* まだ誰も印を付けていない＝自動で最初の札 */
+  if(n.start)delete n.start;
+  else{
+    if(auto){const f=startId();if(f&&state.nodes[f])state.nodes[f].start=true;}  /* 自動の1枚を先に印にする */
+    n.start=true;
+  }
   render();openInsp();
-  toast(was?"▶ スタートの印を元に戻した（最初の札に）":"▶ この札をスタートにした");
+  toast(n.start?"▶ この札をスタートにした":"▶ スタートをやめた");
 }
 function render(){
   const keep=visibleSet();
-  const sid=startId();
+  const sid=startIds();
   const existing={};
   world.querySelectorAll(".node").forEach(el=>existing[el.dataset.id]=el);
   Object.keys(state.nodes).forEach(id=>{
@@ -912,14 +920,14 @@ function render(){
     el.style.background=(rr&&rr.fill)?
       "linear-gradient(170deg,"+tint(rr.color,.28)+" 0%,"+tint(rr.color,.13)+" 100%)":"";
     el.classList.toggle("plain",!r);
-    el.classList.toggle("start",id===sid);
+    el.classList.toggle("start",sid.has(id));
     const sub=subOf(n);
     el.classList.toggle("hassub",!!sub);
     el.classList.toggle("selected",state.selected===id);
     el.classList.toggle("dim",!!keep&&!keep.has(id));
     el.classList.toggle("rev",review.on&&review.list[review.i]===id);
-    el.querySelector(".head").innerHTML=(id===sid?'<span class="stb">▶ START</span>':"")+
-      (r?(esc(r.icon)+" "+esc(r.name)):(id===sid?"":"—"))+
+    el.querySelector(".head").innerHTML=(sid.has(id)?'<span class="stb">▶ START</span>':"")+
+      (r?(esc(r.icon)+" "+esc(r.name)):(sid.has(id)?"":"—"))+
       (sub?'<span class="subb" title="下のノートへ移る">⤵ 下のノート '+Object.keys(sub.nodes).length+'枚</span>':"");
     const txt=el.querySelector(".txt");
     if(!txt.hasAttribute("contenteditable")){
@@ -1877,7 +1885,7 @@ function addSibling(fresh){
   select(id);render();startEdit(nodeEl(id),{noSnap:true,fresh:fresh,from:s.id});
 }
 /* どこにもつながっていない、まっさらな札 */
-function addFree(cx,cy){
+function addFree(cx,cy,asStart){
   snapshot();
   let p;
   if(cx!==undefined) p=toWorld(cx,cy);
@@ -1886,7 +1894,13 @@ function addFree(cx,cy){
     p=toWorld(r.left+stage.clientWidth/2,r.top+stage.clientHeight/2);
   }
   const id=add(PH,p.x-112,p.y-33,null);
+  if(asStart){
+    const auto=!Object.values(state.nodes).some(n=>n.start&&n.id!==id);
+    if(auto){const f=startId();if(f&&f!==id&&state.nodes[f])state.nodes[f].start=true;}
+    state.nodes[id].start=true;                               /* ここから別の始まり */
+  }
   select(id);render();startEdit(nodeEl(id),{noSnap:true});
+  if(asStart)toast("▶ 新しいスタートを作った");
 }
 function subtree(id){
   const s=new Set([id]);let ch=true;
@@ -2012,8 +2026,8 @@ function openInsp(){
   const mi=$("memoInput");
   mi.value=n.memo||"";
   mi.oninput=()=>{state.nodes[state.selected].memo=mi.value;render();};
-  const sb=$("startBtn"),isS=startId()===n.id;
-  sb.textContent=isS?(n.start?"▶ スタートをやめる":"▶ これがスタート"):"▶ スタートにする";
+  const sb=$("startBtn"),isS=startIds().has(n.id);
+  sb.textContent=isS?(n.start?"▶ スタートをやめる":"▶ これがスタート"):"▶ スタートにもする";
   sb.disabled=isS&&!n.start;
   renderLinkBox();
   renderRoleDump();
@@ -2171,6 +2185,12 @@ stage.addEventListener("pointercancel",endPointer);
 stage.addEventListener("dblclick",e=>{
   if(!onEmpty(e)||lastPtype!=="mouse")return;
   addFree(e.clientX,e.clientY);
+});
+stage.addEventListener("contextmenu",e=>{          /* 何もない所を右クリック＝新しいスタートをその場に作って、すぐ書ける */
+  if(!onEmpty(e))return;
+  e.preventDefault();
+  if(ed)commitEd();
+  addFree(e.clientX,e.clientY,true);
 });
 /* ホイール／トラックパッドの拡大縮小。1回ごとに1割ずつ跳ねると速すぎるので、
    動かした量に比例して目標を決め、そこへ毎コマ少しずつ寄せる（ゆるやかに効く） */
@@ -2419,13 +2439,14 @@ function keepNode(m,id){             /* 中身のない札・「あああ」だ�
 function mapHasBody(m){return Object.values(m.nodes).some(n=>!isJunk(n.text));}
 function lineOf(m,nd){
   const r=roleById(nd.role);
+  const st=startIds(m).has(nd.id)?"▶ ":"";
   const body=isJunk(nd.text)?"（空の札）":oneLine(nd.text);
   const tg=(nd.tags||[]).length?"  "+nd.tags.map(x=>"#"+x).join(" "):"";
-  return mdTag(m,nd.id)+" "+(r?"["+r.icon+r.name+"] ":"")+body+tg;
+  return mdTag(m,nd.id)+" "+st+(r?"["+r.icon+r.name+"] ":"")+body+tg;
 }
-function outlineOf(m){
+function outlineOf(m,ok){
   const out=[];
-  rootsIn(m).forEach(root=>{
+  rootsIn(m).filter(r=>!ok||ok(r.id)).forEach(root=>{
     (function walk(id,d){
       const nd=m.nodes[id];if(!nd||!keepNode(m,id))return;
       out.push("  ".repeat(d)+"- "+lineOf(m,nd));
@@ -2437,7 +2458,7 @@ function outlineOf(m){
   });
   return out.join("\n");
 }
-let aiPick=new Set();                          /* AIに渡す紙（上の紙のid）。開くたび「今の紙」で入れ直す */
+let aiPick=new Set(), aiBlock=new Set(), aiBlockTouched=new Set();                          /* AIに渡す紙（上の紙のid）。開くたび「今の紙」で入れ直す */
 function topMaps(){return db.order.filter(id=>db.maps[id]&&!upOf(db.maps[id]));}
 function subsUnder(id,out){                    /* その紙にぶら下がる「⤵下のノート」も一緒に渡す */
   db.order.forEach(k=>{const m=db.maps[k];
@@ -2455,7 +2476,58 @@ function cardCount(id){
   subs.forEach(k=>n+=Object.values(db.maps[k].nodes).filter(x=>!isJunk(x.text)).length);
   return n;
 }
+function rootsOf(m){return rootsIn(m).filter(r=>keepNode(m,r.id)).sort((a,b)=>numOf(a.id)-numOf(b.id));}
+function idOfMap(m){return db.order.find(k=>db.maps[k]===m);}
+function bKey(mid,rid){return mid+"/"+rid;}
+function descIn(m,id,out){out.add(id);kidsIn(m,id).forEach(k=>descIn(m,k.id,out));return out;}
+function blockList(){                          /* 選んだ紙の中の「別々の始まり」を全部ならべる */
+  const out=[];
+  db.order.filter(id=>aiPicked().has(id)).forEach(mid=>{
+    const m=db.maps[mid];if(!m)return;
+    rootsOf(m).forEach(r=>{
+      const cnt=descIn(m,r.id,new Set()).size;
+      out.push({key:bKey(mid,r.id),mid,m,rid:r.id,
+        star:startIds(m).has(r.id),text:oneLine(r.text),n:cnt});
+    });
+  });
+  return out;
+}
+function syncBlocks(){                         /* 紙を選び直したら、その紙のかたまりは全部入りに戻す */
+  const ks=new Set(blockList().map(b=>b.key));
+  [...aiBlock].forEach(k=>{if(!ks.has(k))aiBlock.delete(k);});
+  ks.forEach(k=>{if(!aiBlockTouched.has(k))aiBlock.add(k);});
+}
+function incOf(m){                             /* その紙で渡す札。null＝ぜんぶ */
+  const mid=idOfMap(m),rs=rootsOf(m);
+  const sel=rs.filter(r=>aiBlock.has(bKey(mid,r.id)));
+  if(sel.length===rs.length)return null;
+  const set=new Set();sel.forEach(r=>descIn(m,r.id,set));return set;
+}
+function renderAiBlocks(){
+  const bs=blockList(), row=$("aiBlockRow"), cap=$("aiBlockCap");
+  const many=bs.length>1;
+  row.style.display=cap.style.display=many?"":"none";
+  if(!many)return;
+  const multi=new Set(bs.map(b=>b.mid)).size>1;
+  const all=bs.every(b=>aiBlock.has(b.key));
+  const chip=(k,t,on)=>'<span class="ask'+(on?" on":"")+'" data-k="'+k+'">'+esc(t)+'</span>';
+  row.innerHTML=chip("__all","ぜんぶ（"+bs.length+"）",all)+
+    bs.map(b=>chip(b.key,(b.star?"▶ ":"")+(multi?mapTitle(b.m)+"／":"")+
+      (b.text.length>14?b.text.slice(0,14)+"…":b.text)+"（"+b.n+"）",aiBlock.has(b.key))).join("");
+  row.querySelectorAll(".ask").forEach(el=>el.onclick=()=>{
+    const k=el.dataset.k;
+    if(k==="__all"){
+      aiBlockTouched.clear();
+      if(all){aiBlock=new Set([bs[0].key]);bs.slice(1).forEach(b=>aiBlockTouched.add(b.key));}
+      else aiBlock=new Set(bs.map(b=>b.key));
+    }
+    else if(aiBlock.has(k)){ if(aiBlock.size>1){aiBlock.delete(k);aiBlockTouched.add(k);} }
+    else {aiBlock.add(k);aiBlockTouched.delete(k);}
+    renderAiBlocks();$("aiText").value=buildMarkdown();
+  });
+}
 function renderAiMaps(){
+  syncBlocks();
   const tops=topMaps().filter(id=>cardCount(id)>0);
   const all=tops.length>1&&tops.every(id=>aiPick.has(id));
   const chip=(k,t,on)=>'<span class="ask'+(on?" on":"")+'" data-k="'+k+'">'+esc(t)+'</span>';
@@ -2467,13 +2539,17 @@ function renderAiMaps(){
     if(k==="__all"){ all?(aiPick=new Set([topMaps().filter(id=>cardCount(id)>0)[0]])):(aiPick=new Set(tops)); }
     else if(aiPick.has(k)){ if(aiPick.size>1)aiPick.delete(k); }   /* 最後の1枚は外せない */
     else aiPick.add(k);
-    renderAiMaps();$("aiText").value=buildMarkdown();
+    renderAiMaps();renderAiBlocks();$("aiText").value=buildMarkdown();
   });
 }
 function buildMarkdown(){
   const pick=aiPicked();
-  const maps=db.order.filter(id=>pick.has(id)).map(id=>db.maps[id]).filter(Boolean).filter(mapHasBody);
-  if(!maps.length)return "（渡す紙に札がまだありません）";
+  const inc=new Map();                          /* 紙ごとに「渡す札」。null＝その紙はぜんぶ */
+  const maps=db.order.filter(id=>pick.has(id)).map(id=>db.maps[id]).filter(Boolean).filter(mapHasBody)
+    .filter(m=>{const s=incOf(m);inc.set(m,s);return !s||s.size;});
+  const ok=(m,id)=>{const s=inc.get(m);return !s||s.has(id);};
+  const cut=maps.some(m=>inc.get(m));               /* 紙の中の一部（あるかたまりだけ）を渡している */
+  if(!maps.length)return "（渡すかたまりを1つえらんでください）";
   const mi=new Map(maps.map((m,i)=>[m,i]));
   mdTag=(m,id)=>"#"+(maps.length>1&&mi.get(m)>0?"紙"+(mi.get(m)+1)+"-":"")+numOf(id);
   const where=m=>maps.length>1?"（"+mapTitle(m)+"）":"";
@@ -2482,7 +2558,7 @@ function buildMarkdown(){
   const free=$("askFree")?$("askFree").value.trim():"";
   if(free)askList.push(free);
 
-  const all=[];maps.forEach(m=>Object.values(m.nodes).forEach(nd=>{if(!isJunk(nd.text))all.push(nd);}));
+  const all=[];maps.forEach(m=>Object.values(m.nodes).forEach(nd=>{if(!isJunk(nd.text)&&ok(m,nd.id))all.push(nd);}));
   const done=all.filter(n=>n.role).length;
 
   L.push("# 後づけマップ（自由に書いた図に、あとから意味を貼ったもの）","");
@@ -2492,13 +2568,15 @@ function buildMarkdown(){
   L.push("札 "+all.length+" 枚（意味を貼った "+done+" 枚）／ 紙 "+nTop+" 枚"+
     (nSub?"（＋その下のノート "+nSub+" 枚）":"")+" ／ "+
     new Date().toLocaleString("ja-JP")+" ／ ATOZUKE "+VER,"");
-  if(tops.length>nTop)
-    L.push("※ 本人はほかにも "+(tops.length-nTop)+" 枚の紙を書いていますが、**今回はここに出している紙だけ**を渡しています。"+
-           "見えていない紙の話は、あなたには分かりません。","");
+  if(tops.length>nTop||cut)
+    L.push("※ 本人はほかにも書いていますが、**今回はここに出している分だけ**を渡しています"+
+           (cut?"（1枚の紙の中の、ある「▶スタート」から広がったかたまりだけ）":"")+
+           "。見えていない所の話は、あなたには分かりません。","");
   L.push("## 読み方","");
   L.push("- **先に型を決めずに、思いついた順に書き散らした図**です。親子のつながりは「その札から連想した」くらいの意味で、論理の階層ではありません。",
          "- 札の頭の `#12` は**書いた順の番号**（小さいほど先に書いた）。番号が飛んでいる所は消した札です。枝をまたいで番号を追うと、考えがどこへ飛んだかが見えます。",
          "- `[◎目的]` などは、**書き終わってから本人が「この札は何を出したかったのか」を振り返って貼った意味**。1枚に1つだけ貼れます。",
+         "- `▶` が付いた札は、本人が**そこから始めた（別の始まり）**と決めた札です。1枚の紙に複数あることがあります。",
          "- 頭に `[ ]` が無い札は、まだ意味を貼っていない札です。決めきれていない・どこにも属さない、ということ自体も情報です。","");
   const used=db.roles.map(r=>({r,c:all.filter(n=>n.role===r.id).length})).filter(x=>x.c);
   if(used.length){
@@ -2510,7 +2588,8 @@ function buildMarkdown(){
 
   const vws=[];
   maps.forEach(m=>(m.views||[]).slice().reverse().forEach(v=>{
-    const ns=(v.ids||[]).filter(id=>m.nodes[id]).map(numOf).sort((a,b)=>a-b);
+    const ns=(v.ids||[]).filter(id=>m.nodes[id]&&ok(m,id)).map(numOf).sort((a,b)=>a-b);
+    if(!ns.length)return;
     const rng=ns.length?mdTag(m,"n"+ns[0])+"〜"+mdTag(m,"n"+ns[ns.length-1]).replace(/^#(紙\d+-)?/,"#"):"";
     vws.push("- "+(rng?"**"+rng+" を書いたところで：** ":"")+"「"+oneLine(v.text)+"」"+where(m));
   }));
@@ -2533,13 +2612,13 @@ function buildMarkdown(){
     const up=m.up&&db.maps[m.up.map];
     L.push("### "+(maps.length>1&&mi.get(m)>0?"紙"+(mi.get(m)+1)+"：":"")+mapTitle(m)+
       (up?"（"+mdTag(up,m.up.node)+" の札の下のノート）":""),"");
-    L.push(outlineOf(m)||"（空）","");
+    L.push(outlineOf(m,id=>ok(m,id))||"（空）","");
   });
 
   const lks=[];
   maps.forEach(m=>Object.values(m.nodes).forEach(nd=>{
     (nd.links||[]).forEach(l=>{
-      const t=m.nodes[l.to]; if(!t)return;
+      const t=m.nodes[l.to]; if(!t||!ok(m,nd.id)||!ok(m,t.id))return;
       lks.push("- "+mdTag(m,nd.id)+" "+oneLine(nd.text)+"　⌁　"+mdTag(m,t.id)+" "+oneLine(t.text)+
         (l.label?"　…… "+oneLine(l.label):""));
     });
@@ -2551,7 +2630,7 @@ function buildMarkdown(){
   }
   const frs=[];
   maps.forEach(m=>(m.frames||[]).forEach(f=>{
-    const ns=(f.ids||[]).map(id=>m.nodes[id]).filter(Boolean).filter(n=>!isJunk(n.text))
+    const ns=(f.ids||[]).map(id=>m.nodes[id]).filter(Boolean).filter(n=>!isJunk(n.text)&&ok(m,n.id))
       .sort((a,b)=>numOf(a.id)-numOf(b.id));
     if(!ns.length)return;
     frs.push("- **「"+oneLine(f.name||"枠")+"」**（"+ns.length+"枚）： "+ns.map(n=>mdTag(m,n.id)+" "+oneLine(n.text).slice(0,18)).join(" ／ "));
@@ -2566,7 +2645,7 @@ function buildMarkdown(){
     L.push("---","","## 2. 意味べつに抜き出したもの（1章の札の再掲。番号で1章と対応）","");
     used.forEach(({r})=>{
       L.push("### "+r.icon+" "+r.name,"");
-      maps.forEach(m=>Object.values(m.nodes).filter(nd=>nd.role===r.id&&!isJunk(nd.text))
+      maps.forEach(m=>Object.values(m.nodes).filter(nd=>nd.role===r.id&&!isJunk(nd.text)&&ok(m,nd.id))
         .sort((a,b)=>numOf(a.id)-numOf(b.id))
         .forEach(nd=>L.push("- "+mdTag(m,nd.id)+" "+oneLine(nd.text))));
       L.push("");
@@ -2575,7 +2654,7 @@ function buildMarkdown(){
 
   const tagMap={};
   maps.forEach(m=>Object.values(m.nodes).forEach(nd=>(nd.tags||[]).forEach(t=>{
-    if(!isJunk(nd.text))(tagMap[t]=tagMap[t]||[]).push(mdTag(m,nd.id));})));
+    if(!isJunk(nd.text)&&ok(m,nd.id))(tagMap[t]=tagMap[t]||[]).push(mdTag(m,nd.id));})));
   const tk=Object.keys(tagMap).sort();
   if(tk.length){
     L.push("---","","## 3. タグ","");
@@ -2609,13 +2688,14 @@ function renderAsks(){
 function openAI(){
   const top=chainOf(db.cur)[0];
   aiPick=new Set([db.maps[top]?top:topMaps()[0]].filter(Boolean));   /* いま見ている紙だけ。増やしたければ押す */
-  renderAiMaps();
+  aiBlock=new Set();aiBlockTouched=new Set();
+  renderAiMaps();renderAiBlocks();
   renderAsks();
   $("aiText").value=buildMarkdown();
   openModal("ai");
 }
 $("askFree").addEventListener("input",()=>{$("aiText").value=buildMarkdown();});
-$("aiRefresh").onclick=()=>{renderAiMaps();$("aiText").value=buildMarkdown();toast("作り直した");};
+$("aiRefresh").onclick=()=>{renderAiMaps();renderAiBlocks();$("aiText").value=buildMarkdown();toast("作り直した");};
 $("aiCopy").onclick=()=>{
   const t=$("aiText");t.select();t.setSelectionRange(0,999999);
   const done=()=>{toast("コピーした。ClaudeやGeminiに貼るだけ");};
