@@ -201,13 +201,16 @@
     background:linear-gradient(170deg,#12121f 0%,#0a0a12 100%);}
   .node.rev{box-shadow:0 0 0 2px var(--gold),0 0 48px -6px var(--gold),0 8px 22px rgba(0,0,0,.6);}
   /* ▶ スタートの札：角の丸いカプセル形＋黄緑。どこから書き始めたかが一目で分かる */
-  .node.start{border-radius:30px;padding:11px 20px 12px;border:2px solid #b6ff3a;
-    background:linear-gradient(170deg,#1d2a0c 0%,#0e1406 100%)!important;
-    box-shadow:0 0 0 4px rgba(182,255,58,.12),0 0 34px -6px #b6ff3a,0 8px 22px rgba(0,0,0,.6);}
-  .node.start.selected{box-shadow:0 0 0 4px rgba(182,255,58,.35),0 0 44px -4px #b6ff3a,0 8px 22px rgba(0,0,0,.6);}
-  .node.start .head{color:#b6ff3a}
-  .node.start .stb{font-weight:800;letter-spacing:.14em;background:#b6ff3a;color:#0b1004;
+  /* --st＝そのスタートの色（札ごとに変えられる。既定は黄緑） */
+  .node.start{--st:#b6ff3a;border-radius:30px;padding:11px 20px 12px;border:2px solid var(--st);
+    background:linear-gradient(170deg,color-mix(in srgb,var(--st) 16%,#0b0b12) 0%,#0b0b12 100%)!important;
+    box-shadow:0 0 0 4px color-mix(in srgb,var(--st) 14%,transparent),0 0 34px -6px var(--st),0 8px 22px rgba(0,0,0,.6);}
+  .node.start.selected{box-shadow:0 0 0 4px color-mix(in srgb,var(--st) 38%,transparent),0 0 44px -4px var(--st),0 8px 22px rgba(0,0,0,.6);}
+  .node.start .head{color:var(--st)}
+  .node.start .stb{font-weight:800;letter-spacing:.14em;background:var(--st);color:#0b1004;
     border-radius:999px;padding:0 7px;margin-right:3px}
+  #stColors{margin-top:7px}
+  #stColors .c{width:22px;height:22px;}
   .node .head{display:flex;align-items:center;gap:5px;font-size:9.5px;color:var(--c,var(--plain));
     margin-bottom:4px;font-family:var(--mono);letter-spacing:.09em;opacity:.95;}
   .node.plain .head{color:#4d5878;}
@@ -451,6 +454,10 @@
       <button id="linkBtn2">⌁ つなぐ</button>
       <button id="delOneBtn">この札を消す</button>
     </div>
+    <div id="stColorWrap" style="display:none">
+      <div class="cap" style="margin-top:9px">▶ スタートの色</div>
+      <div class="sw" id="stColors"></div>
+    </div>
   </section>
 </div>
 
@@ -570,7 +577,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.21.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.22.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -906,6 +913,24 @@ function startIds(m){                        /* スタートの札は何枚あ�
   return new Set(roots.length?[roots[0].id]:[]);
 }
 function startId(){const s=startIds();return s.size?[...s][0]:null;}
+const START_COLOR="#b6ff3a";
+function startColor(n){return (n&&n.sc)||START_COLOR;}
+function setStartColor(id,c){
+  const n=state.nodes[id];if(!n)return;
+  snapshot();
+  if(c===START_COLOR)delete n.sc; else n.sc=c;
+  render();openInsp();save();
+}
+function renderStartColors(n){
+  const w=$("stColorWrap"),on=startIds().has(n.id);
+  w.style.display=on?"":"none";
+  if(!on)return;
+  const now=startColor(n).toLowerCase();
+  $("stColors").innerHTML=[START_COLOR].concat(SWATCHES).map(c=>
+    '<span class="c'+(c.toLowerCase()===now?" on":"")+'" data-c="'+c+
+    '" style="background:'+c+';box-shadow:0 0 13px -2px '+c+'"></span>').join("");
+  $("stColors").querySelectorAll(".c").forEach(b=>b.onclick=()=>setStartColor(n.id,b.dataset.c));
+}
 function setStart(id){
   snapshot();
   const n=state.nodes[id];if(!n)return;
@@ -942,6 +967,7 @@ function render(){
       "linear-gradient(170deg,"+tint(rr.color,.28)+" 0%,"+tint(rr.color,.13)+" 100%)":"";
     el.classList.toggle("plain",!r);
     el.classList.toggle("start",sid.has(id));
+    el.style.setProperty("--st",sid.has(id)?startColor(n):"");
     const sub=subOf(n);
     el.classList.toggle("hassub",!!sub);
     el.classList.toggle("selected",state.selected===id);
@@ -2050,6 +2076,7 @@ function openInsp(){
   const sb=$("startBtn"),isS=startIds().has(n.id);
   sb.textContent=isS?(n.start?"▶ スタートをやめる":"▶ これがスタート"):"▶ スタートにもする";
   sb.disabled=isS&&!n.start;
+  renderStartColors(n);
   renderLinkBox();
   renderRoleDump();
 }
