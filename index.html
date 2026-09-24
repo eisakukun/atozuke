@@ -325,6 +325,18 @@
     box-shadow:0 0 12px -4px var(--mag);}
   #askFree{width:100%;margin-top:2px;}
 
+  #calHead{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0 12px;}
+  #calHead .big{font-family:var(--mono);font-size:22px;color:#7cff9b;}
+  #calHead .sub{font-size:11.5px;color:var(--muted);}
+  .calrow{display:flex;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line);
+    border-radius:6px;margin-bottom:6px;background:#0b0b16;cursor:pointer;}
+  .calrow:hover{border-color:#7cff9b;background:#0e150f;}
+  .calrow.today{border-color:#7cff9b;box-shadow:0 0 14px -6px #7cff9b;}
+  .calrow .d{font-family:var(--mono);font-size:13px;color:#7cff9b;min-width:92px;}
+  .calrow .t{flex:1;min-width:0;font-size:13px;color:#dfe9ff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .calrow .c{font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;}
+  .calrow .v{font-size:11px;color:#9fb6d0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:38%;}
+  .calgap{font-size:11px;color:#5f6b8f;font-family:var(--mono);margin:0 0 6px 6px;}
   #hint{position:fixed;bottom:10px;left:10px;z-index:20;background:rgba(10,10,20,.92);
     border:1px solid var(--line);border-radius:4px;padding:6px 11px;font-size:11px;
     color:var(--muted);pointer-events:none;font-family:var(--mono);}
@@ -379,6 +391,7 @@
   <button id="importBtn" title="読み込み（.json / .md）">📂</button>
   <button id="bakBtn" title="自動の控えから戻す">🕘</button>
   <button id="syncBtn" title="ほかの端末と同期">☁<span id="syncDot"></span></button>
+  <button id="calBtn" title="毎日の記録（日めくり）">📅<span class="lbl"> 日めくり</span></button>
   <button id="newTab">＋新規</button>
   <button id="clearBtn" title="このマップを空にする">🗑</button>
   <button id="reloadBtn" title="読み直す">⟳</button>
@@ -534,6 +547,14 @@
   </div>
   <div id="syState" class="subtle" style="margin-top:12px"></div>
 </div>
+<div class="modal" id="cal" style="border-color:#7cff9b;box-shadow:0 0 60px -14px #7cff9b">
+  <h2 style="color:#7cff9b">📅 日めくり（毎日のまとめ）
+    <span class="sp"><button id="calClose">閉じる</button></span></h2>
+  <div id="calHead"></div>
+  <div id="calList"></div>
+  <div class="subtle">日付のない紙にも、右の欄から日付を付けられる（付けるとここに並ぶ）。</div>
+</div>
+
 <div class="modal" id="bak">
   <h2>🕘 自動の控え <span class="sp"><button id="bakClose">閉じる</button></span></h2>
   <div class="subtle">開いたとき・3分ごと（中身が変わったときだけ）に、この端末の中へ自動で控えを取っている。直近20回分＋日ごとに1つ（14日分）。消えた・壊れたときはここから戻せる。</div>
@@ -549,7 +570,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.20.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.21.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -2773,6 +2794,109 @@ function openBak(){
   }).catch(()=>{$("bakList").innerHTML='<div class="subtle">この環境では控えが使えない（💾で書き出して）</div>';});
 }
 
+/* =========================================================
+   📅 日めくり（毎日1枚の紙を、日付で並べてまとめる）
+   紙に m.day="YYYY-MM-DD"。付いていない紙は、名前の「9/22」みたいな書き方から推し量る
+   ========================================================= */
+function dayKey(d){const z=n=>(n<10?"0":"")+n;return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate());}
+function todayKey(){return dayKey(new Date());}
+function dayLabel(k){
+  const [y,m,d]=k.split("-").map(Number);
+  const dt=new Date(y,m-1,d);
+  return m+"/"+d+"（"+"日月火水木金土"[dt.getDay()]+"）";
+}
+function guessDay(m){                          /* 「9/22まとめ」→ その年の9/22 */
+  const t=(m.title||m.name||"")+"";
+  const g=t.match(/(\d{1,2})\s*[\/月]\s*(\d{1,2})/);
+  if(!g)return null;
+  const mo=+g[1],dd=+g[2];
+  if(mo<1||mo>12||dd<1||dd>31)return null;
+  const y=new Date(m.u||Date.now()).getFullYear();
+  return dayKey(new Date(y,mo-1,dd));
+}
+function dayOf(m){return m.day||guessDay(m);}
+function dayRows(){
+  const rows=[];
+  db.order.forEach(id=>{
+    const m=db.maps[id];if(!m||upOf(m))return;
+    const k=dayOf(m);if(!k)return;
+    const ns=Object.values(m.nodes).filter(n=>!isJunk(n.text));
+    rows.push({id,m,k,n:ns.length,done:ns.filter(n=>n.role).length,
+      view:(m.views&&m.views[0]?oneLine(m.views[0].text):"")});
+  });
+  return rows.sort((a,b)=>a.k<b.k?1:a.k>b.k?-1:0);
+}
+function noDayRows(){
+  return db.order.map(id=>({id,m:db.maps[id]})).filter(x=>x.m&&!upOf(x.m)&&!dayOf(x.m));
+}
+function streakOf(rows){                       /* 今日（無ければ昨日）から、何日つづいているか */
+  const has=new Set(rows.map(r=>r.k));
+  const d=new Date();
+  if(!has.has(dayKey(d)))d.setDate(d.getDate()-1);
+  let n=0;
+  while(has.has(dayKey(d))){n++;d.setDate(d.getDate()-1);}
+  return n;
+}
+function daysBetween(a,b){                     /* 日付のすき間（何日あけたか） */
+  const [y1,m1,d1]=a.split("-").map(Number),[y2,m2,d2]=b.split("-").map(Number);
+  return Math.round((new Date(y1,m1-1,d1)-new Date(y2,m2-1,d2))/86400000);
+}
+function makeToday(){
+  const k=todayKey(), hit=dayRows().find(r=>r.k===k);
+  if(hit){closeModals();switchTo(hit.id);toast("今日の紙をひらいた");return;}
+  const id=blankMap(dayLabel(k));
+  db.maps[id].day=k; db.maps[id].title=dayLabel(k);
+  closeModals();switchTo(id);save();toast("📅 今日の紙を作った");
+}
+function rowTitle(r){                           /* 名前が日付そのものなら、中身の1枚目を見せる */
+  const t=mapTitle(r.m);
+  if(t!==dayLabel(r.k))return t;
+  const ns=Object.values(r.m.nodes).filter(n=>!isJunk(n.text))
+    .sort((a,b)=>numOf(a.id)-numOf(b.id));
+  return ns.length?oneLine(ns[0].text).slice(0,40):"（まだ白紙）";
+}
+function renderCal(){
+  const rows=dayRows(), st=streakOf(rows), k=todayKey();
+  const hasToday=rows.some(r=>r.k===k);
+  const thisMonth=rows.filter(r=>r.k.slice(0,7)===k.slice(0,7)).length;
+  $("calHead").innerHTML=
+    '<span class="big">🔥 '+st+'日</span>'+
+    '<span class="sub">つづけて書いている<br>今月 '+thisMonth+' 日 ／ ぜんぶで '+rows.length+' 日</span>'+
+    '<span style="flex:1"></span>'+
+    '<button id="calToday" class="primary">'+(hasToday?"今日の紙をひらく":"＋ 今日の紙を作る")+'</button>';
+  $("calToday").onclick=makeToday;
+
+  let html="";
+  rows.forEach((r,i)=>{
+    const prev=rows[i-1];
+    if(prev){const gap=daysBetween(prev.k,r.k);if(gap>1)html+='<div class="calgap">…… '+(gap-1)+'日あいた</div>';}
+    html+='<div class="calrow'+(r.k===k?" today":"")+'" data-id="'+r.id+'">'+
+      '<span class="d">'+dayLabel(r.k)+'</span>'+
+      '<span class="t">'+esc(rowTitle(r))+'</span>'+
+      (r.view?'<span class="v">🔭 '+esc(r.view)+'</span>':"")+
+      '<span class="c">'+r.n+'枚 ／ 意味 '+r.done+'</span></div>';
+  });
+  if(!rows.length)html='<div class="subtle">まだ日付の付いた紙がない。「＋ 今日の紙を作る」から始められる。</div>';
+
+  const nd=noDayRows();
+  if(nd.length){
+    html+='<div class="cap" style="margin-top:14px">日付のない紙</div>'+
+      nd.map(x=>'<div class="calrow" data-id="'+x.id+'"><span class="t">'+esc(mapTitle(x.m))+'</span>'+
+        '<input type="date" data-set="'+x.id+'" style="width:150px" onclick="event.stopPropagation()"></div>').join("");
+  }
+  $("calList").innerHTML=html;
+  $("calList").querySelectorAll(".calrow").forEach(el=>el.onclick=()=>{
+    closeModals();switchTo(el.dataset.id);
+  });
+  $("calList").querySelectorAll("input[data-set]").forEach(inp=>{
+    inp.onchange=()=>{
+      const m=db.maps[inp.dataset.set];if(!m||!inp.value)return;
+      m.day=inp.value;m.u=Date.now();save();renderCal();toast("📅 日付を付けた");
+    };
+  });
+}
+function openCal(){renderCal();openModal("cal");}
+
 /* ===== 消えないための見張り ===== */
 function flush(){if(ed)commitEd();save();}
 document.addEventListener("visibilitychange",()=>{
@@ -2982,6 +3106,8 @@ $("bakClose").onclick=closeModals;
 $("roleRow").addEventListener("mousedown",e=>{if(ed&&e.target.closest(".rolebtn"))e.preventDefault();});
 $("fileInput").onchange=e=>{if(e.target.files[0])importFile(e.target.files[0]);e.target.value="";};
 $("newTab").onclick=()=>{const id=blankMap();switchTo(id);save();};
+$("calBtn").onclick=openCal;
+$("calClose").onclick=closeModals;
 $("clearBtn").onclick=clearAll;
 $("delOneBtn").onclick=delNode;
 $("cutBtn").onclick=cutParent;
