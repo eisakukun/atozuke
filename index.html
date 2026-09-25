@@ -629,7 +629,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.24.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.24.1";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -987,7 +987,7 @@ function timeInner(t){
   for(let i=0;i<=H;i++){
     const y=i/H*t.h;
     h+='<div class="hr'+(i%3?" mid":"")+'" style="top:'+y+'px"></div>';
-    if(!(i%3)&&i<H)h+='<div class="lb" style="top:'+(y+9)+'px">'+i+':00</div>';
+    if(!(i%3))h+='<div class="lb" style="top:'+(i===H?y-9:y+9)+'px">'+i+':00</div>';  /* 24:00 は線の上に置く */
   }
   h+='<div class="now" style="top:'+nowY+'px"></div>'+
      '<div class="nowlb" style="top:'+(nowY-9)+'px">いま</div></div>';
