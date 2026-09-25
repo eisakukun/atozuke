@@ -244,6 +244,7 @@
     background:rgba(10,10,20,.97);border-left:1px solid var(--line);padding:14px;display:none;
     box-shadow:-14px 0 34px -20px var(--mag);}
   #insp.open{display:block;}
+  #inspGrip{display:none;}
   #insp h3{margin:0 0 7px;font-size:10.5px;color:var(--mag);font-weight:700;letter-spacing:.14em;
     font-family:var(--mono);}
   #insp section{margin-bottom:16px;}
@@ -369,6 +370,15 @@
     .lbl{display:none;}
     #insp{width:100%;top:auto;height:46vh;border-left:none;border-top:1px solid var(--mag);padding-bottom:calc(14px + var(--sab));}
     body.editing #insp{display:none;}
+    /* スマホ：上のピンクの線をつかんで下へ引っ込める／小さくなったタブを押すか引き上げると戻る */
+    #insp{padding-top:0;transition:height .22s ease;}
+    #insp.drag{transition:none;}
+    #inspGrip{display:flex;position:sticky;top:0;z-index:3;margin:0 -14px 10px;height:34px;align-items:center;justify-content:center;gap:10px;
+      background:rgba(10,10,20,.98);touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;}
+    #inspGrip .bar{width:46px;height:5px;border-radius:3px;background:var(--mag);box-shadow:0 0 10px var(--mag);}
+    #inspGrip .gl{display:none;font-size:12px;color:var(--mag);letter-spacing:.12em;}
+    #insp.min{height:calc(36px + var(--sab));overflow:hidden;padding-bottom:0;}
+    #insp.min #inspGrip .gl{display:inline;}
     #hint{display:none;}
     .grow{opacity:1;}
   }
@@ -415,6 +425,7 @@
 </div>
 
 <div id="insp">
+  <div id="inspGrip" title="下へ引くと引っ込む／押すか引き上げると出る"><span class="bar"></span><span class="gl">▲ 設定をひらく</span></div>
   <section id="viewSec">
     <h3>🔭 俯瞰ライン<span class="vcap">行にカーソルを乗せると、その時の枠が出る</span></h3>
     <div class="subtle">ここまでに書いたものを上から見て、ひとことで言うと？　書いた時点で「まだ入っていない札」が、その1本の受け持ちになる。</div>
@@ -579,7 +590,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.22.2";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.23.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -2035,6 +2046,45 @@ function focusNode(id){
   state.view.y=(stage.clientHeight-(review.on?160:0))/2-b.cy*sc;
   applyView();save();
 }
+
+/* ===== スマホ：右パネル（下のシート）を引っ込める ===== */
+(function(){
+  const g=$("inspGrip"),K="az_insp_min";
+  function setMin(on){
+    insp.classList.toggle("min",on);insp.style.height="";
+    if(on)insp.scrollTop=0;
+    try{localStorage.setItem(K,on?"1":"");}catch(e){}
+  }
+  try{if(localStorage.getItem(K))insp.classList.add("min");}catch(e){}
+  let d=null;
+  g.addEventListener("pointerdown",e=>{
+    d={y:e.clientY,h:insp.offsetHeight,moved:false,id:e.pointerId};
+    insp.classList.add("drag");
+    try{g.setPointerCapture(e.pointerId);}catch(_){}
+    e.preventDefault();
+  });
+  g.addEventListener("pointermove",e=>{
+    if(!d)return;
+    const dy=e.clientY-d.y;
+    if(Math.abs(dy)>6)d.moved=true;
+    if(!d.moved)return;
+    const full=innerHeight*.46,lo=36;
+    if(insp.classList.contains("min")){insp.classList.remove("min");insp.style.overflow="hidden";}
+    insp.style.height=Math.max(lo,Math.min(full,d.h-dy))+"px";
+  });
+  function end(e){
+    if(!d)return;
+    const wasMin=insp.classList.contains("min")||d.h<80;
+    insp.classList.remove("drag");insp.style.overflow="";
+    if(!d.moved)setMin(!insp.classList.contains("min"));          /* 押しただけ＝出す/引っ込めるの切り替え */
+    else{
+      const h=insp.offsetHeight,full=innerHeight*.46;
+      setMin(wasMin ? h<full*.25 : h<full*.7);                    /* 少し引けばその向きに決まる */
+    }
+    d=null;
+  }
+  g.addEventListener("pointerup",end);g.addEventListener("pointercancel",end);
+})();
 
 /* ===== 右パネル ===== */
 function openInsp(){
