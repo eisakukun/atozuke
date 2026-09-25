@@ -150,6 +150,36 @@
   #linkBox .lnm{font-size:11px;color:#ff8fd6;max-width:95px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   /* ===== ▢ 枠（ひとまとまりと見た組を囲う。中の札ごと動かせる） ===== */
+  /* ===== 🛠 ツール（時間軸など）。ふだんは札の後ろの背景。置き場所を決めている間だけ前に出る ===== */
+  #tools{position:absolute;left:0;top:0;width:0;height:0;z-index:0;}
+  .tool{position:absolute;pointer-events:none;}
+  .tool .tbody{position:absolute;inset:0;border:1px solid #39456b;border-radius:12px;
+    background:linear-gradient(180deg,rgba(18,22,40,.55),rgba(8,10,18,.55));overflow:hidden;}
+  .tool .hr{position:absolute;left:0;right:0;border-top:1px solid #46527d;}
+  .tool .hr.mid{border-top-style:dashed;opacity:.45;}
+  .tool .lb{position:absolute;left:7px;font-family:var(--mono);font-size:11px;color:#9fb0d8;
+    transform:translateY(-50%);letter-spacing:.06em;}
+  .tool .now{position:absolute;left:0;right:0;border-top:2px solid var(--mag);
+    box-shadow:0 0 12px -1px var(--mag);}
+  .tool .nowlb{position:absolute;right:6px;font-family:var(--mono);font-size:10px;color:var(--mag);
+    transform:translateY(-50%);}
+  .tool .kb{position:absolute;left:4px;top:4px;pointer-events:auto;cursor:pointer;z-index:2;
+    border:1px solid var(--line);background:rgba(10,10,20,.9);border-radius:6px;
+    padding:2px 6px;font-size:13px;line-height:1.5;}
+  .tool.locked{opacity:1;}
+  .tool.locked .kb{opacity:.18;}
+  .tool.locked .kb:hover{opacity:1;border-color:var(--gold);}
+  .tool.free{pointer-events:auto;z-index:60;cursor:grab;}
+  .tool.free .tbody{border-color:var(--gold);box-shadow:0 0 30px -10px var(--gold);}
+  .tool.free.drag{cursor:grabbing;}
+  .tool .thead{position:absolute;left:0;top:-38px;display:flex;gap:6px;align-items:center;
+    pointer-events:auto;background:rgba(10,10,20,.92);border:1px solid var(--line);border-radius:6px;
+    padding:4px 7px;white-space:nowrap;}
+  .tool .thead button{padding:3px 7px;font-size:11.5px;}
+  .tool .thead .lab{font-size:10px;color:#4d5878;font-family:var(--mono);}
+  .tool .thead input[type=range]{width:90px;}
+  .tool .tres{position:absolute;right:-9px;bottom:-9px;width:20px;height:20px;pointer-events:auto;
+    border:1px solid var(--gold);border-radius:5px;background:rgba(10,10,20,.9);cursor:nwse-resize;}
   #frames{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none}
   .frame.sel{border-style:solid;box-shadow:0 0 0 2px var(--fc,#6f7bd6),0 0 50px -12px var(--fc,#6f7bd6) inset}
   .frame.sel .ftag{background:var(--fc,#6f7bd6);color:#07070d;font-weight:700}
@@ -419,6 +449,7 @@
 
 <div id="stage">
   <div id="world">
+    <div id="tools"></div>
     <div id="frames"></div>
     <svg id="links"></svg>
   </div>
@@ -679,12 +710,13 @@ function nodeEl(id){return world.querySelector('.node[data-id="'+id+'"]');}
 
 /* ===== 履歴 ===== */
 function capture(){return JSON.stringify({nodes:state.nodes,seq:state.seq,selected:state.selected,
-  frames:state.frames||[],views:state.views||[],notes:state.notes||[]});}
+  frames:state.frames||[],views:state.views||[],notes:state.notes||[],tools:state.tools||[]});}
 function restore(s){const o=JSON.parse(s);
   state.nodes=o.nodes;state.seq=o.seq;state.selected=o.selected;
   if(o.frames)state.frames=o.frames;
   if(o.views)state.views=o.views;
   if(o.notes)state.notes=o.notes;
+  if(o.tools)state.tools=o.tools;
   selFrame=null;
   render();openInsp();save();}
 function snapshot(){undoStack.push(capture());if(undoStack.length>80)undoStack.shift();
@@ -803,6 +835,33 @@ function openSubMenu(nodeId){
   box.style.top=(r.bottom+8+h<innerHeight?r.bottom+8:Math.max(8,r.top-h-8))+"px";
   box.querySelectorAll("button").forEach(b=>b.onclick=()=>subAct(b.dataset.a));
 }
+const EMPTY_ACTS=[
+  {k:"start",icon:"▶",name:"新しいスタート",d:"ここから別の始まりを書く"},
+  {k:"time", icon:"🕐",name:"一日の時間軸を置く",d:"縦に0時→24時。置いたら 🔑 でとめる"}
+];
+function openEmptyMenu(x,y){
+  const box=$("subMenu"),locked=toolsOf().filter(t=>t.lock);
+  const acts=EMPTY_ACTS.concat(locked.length?[{k:"unlock",icon:"🔑",name:"ツールを動かせるようにする",
+    d:"とめてある "+locked.length+" 個をぜんぶ外す"}]:[]);
+  box.innerHTML='<div class="t">ここに何を出す？　↑↓で選んで⏎</div>'+
+    acts.map((a,i)=>'<button data-k="'+a.k+'"'+(i?"":' class="cur"')+'>'+a.icon+' '+a.name+
+      '<span class="d">'+a.d+'</span></button>').join("")+
+    '<button data-k="x">やめる<kbd>esc</kbd></button>';
+  box._kind="empty";box._i=0;box._x=x;box._y=y;
+  box.classList.add("open");
+  const w=box.offsetWidth,h=box.offsetHeight;
+  box.style.left=Math.max(8,Math.min(innerWidth-w-8,x))+"px";
+  box.style.top=Math.max(8,Math.min(innerHeight-h-8,y))+"px";
+  box.querySelectorAll("button").forEach(b=>b.onclick=()=>emptyAct(b.dataset.k));
+}
+function emptyAct(k){
+  const box=$("subMenu"),x=box._x,y=box._y;
+  closeSubMenu();
+  if(k==="start")addFree(x,y,true);
+  else if(k==="time")addTimeTool(x,y);
+  else if(k==="unlock"){snapshot();toolsOf().forEach(t=>t.lock=false);renderTools();save();
+    toast("🔑 ツールを動かせるようにした");}
+}
 function subAct(a){
   const id=$("subMenu")._node;
   if(a==="go")goSub(id);else if(a==="makego")makeSub(id,true);else if(a==="make")makeSub(id,false);
@@ -899,6 +958,118 @@ function delMap(id){
   if(db.cur===id) switchTo(db.order[0]); else {renderTabs();save();}
 }
 
+/* =========================================================
+   🛠 ツール：一日の時間軸（縦）
+   紙に m.tools=[{id,kind:"time",x,y,w,h,op,lock}]
+   lock=true＝背景に回って触れない／false＝前に出て動かす・大きさ・薄さを変えられる
+   ========================================================= */
+function toolsOf(){if(!Array.isArray(state.tools))state.tools=[];return state.tools;}
+function addTimeTool(cx,cy){
+  snapshot();
+  const p=(cx===undefined)?toWorld(innerWidth/2,innerHeight/2):toWorld(cx,cy);
+  const t={id:"t"+Date.now().toString(36),kind:"time",
+    x:Math.round(p.x),y:Math.round(p.y),w:170,h:960,op:.4,lock:false};
+  toolsOf().push(t);
+  renderTools();save();
+  toast("🕐 時間軸を置いた。場所と大きさを決めて 🔑 でとめる");
+}
+function timeInner(t){
+  const H=24,now=new Date(),nowY=(now.getHours()+now.getMinutes()/60)/H*t.h;
+  let h='<div class="tbody">';
+  for(let i=0;i<=H;i++){
+    const y=i/H*t.h;
+    h+='<div class="hr'+(i%3?" mid":"")+'" style="top:'+y+'px"></div>';
+    if(!(i%3)&&i<H)h+='<div class="lb" style="top:'+(y+9)+'px">'+i+':00</div>';
+  }
+  h+='<div class="now" style="top:'+nowY+'px"></div>'+
+     '<div class="nowlb" style="top:'+(nowY-9)+'px">いま</div></div>';
+  return h;
+}
+function renderToolsIfNeeded(){
+  const sig=JSON.stringify(toolsOf());
+  if($("tools")._sig===sig)return;
+  renderTools();
+}
+function renderTools(){
+  const box=$("tools");
+  box._sig=JSON.stringify(toolsOf());
+  box.innerHTML=toolsOf().map(t=>
+    '<div class="tool '+(t.lock?"locked":"free")+'" data-t="'+t.id+'" style="left:'+t.x+'px;top:'+t.y+
+      'px;width:'+t.w+'px;height:'+t.h+'px;opacity:'+t.op+'">'+
+      timeInner(t)+
+      '<div class="kb" title="'+(t.lock?"とめてある（押すと動かせる）":"ここでとめる")+'">'+(t.lock?"🔒":"🔑")+'</div>'+
+      (t.lock?"":
+        '<div class="thead"><span class="lab">うすさ</span>'+
+        '<input type="range" min="5" max="100" value="'+Math.round(t.op*100)+'" data-op="'+t.id+'">'+
+        '<button data-act="lock" data-t="'+t.id+'">🔑 ここでとめる</button>'+
+        '<button data-act="del" data-t="'+t.id+'">消す</button></div>'+
+        '<div class="tres"></div>')+
+    '</div>').join("");
+  bindTools();
+}
+function toolById(id){return toolsOf().find(t=>t.id===id);}
+function setToolLock(id,v){
+  const t=toolById(id);if(!t)return;
+  snapshot();t.lock=v;renderTools();save();
+  toast(v?"🔒 ここでとめた（背景になる）":"🔑 動かせるようにした");
+}
+function delTool(id){
+  snapshot();
+  state.tools=toolsOf().filter(t=>t.id!==id);
+  renderTools();save();toast("ツールを消した（⌘Zで戻せる）");
+}
+function bindTools(){
+  $("tools").querySelectorAll(".tool").forEach(el=>{
+    const t=toolById(el.dataset.t);if(!t)return;
+    el.querySelector(".kb").onclick=e=>{e.stopPropagation();setToolLock(t.id,!t.lock);};
+    if(t.lock)return;
+    el.querySelectorAll("[data-act]").forEach(b=>b.onclick=e=>{
+      e.stopPropagation();
+      if(b.dataset.act==="lock")setToolLock(t.id,true);else delTool(t.id);
+    });
+    const rng=el.querySelector("[data-op]");
+    if(rng){
+      rng.oninput=()=>{t.op=(+rng.value)/100;el.style.opacity=t.op;};
+      rng.onpointerdown=e=>e.stopPropagation();
+      rng.onchange=()=>save();
+    }
+    /* 動かす */
+    el.addEventListener("pointerdown",e=>{
+      if(e.target.closest(".thead")||e.target.closest(".kb"))return;
+      const res=!!e.target.closest(".tres");
+      e.stopPropagation();e.preventDefault();
+      try{el.setPointerCapture(e.pointerId);}catch(_){}
+      const sx=e.clientX,sy=e.clientY,ox=t.x,oy=t.y,ow=t.w,oh=t.h,sc=state.view.scale;
+      let moved=false;
+      el.classList.add("drag");
+      const mv=ev=>{
+        const dx=(ev.clientX-sx)/sc,dy=(ev.clientY-sy)/sc;
+        if(!moved&&Math.hypot(dx,dy)*sc>3){moved=true;snapshot();}
+        if(!moved)return;
+        if(res){t.w=Math.max(60,Math.round(ow+dx));t.h=Math.max(120,Math.round(oh+dy));
+          el.style.width=t.w+"px";el.style.height=t.h+"px";
+          const b=el.querySelector(".tbody");if(b)b.outerHTML=timeInner(t);   /* 中の線だけ引き直す */
+        }else{
+          t.x=Math.round(ox+dx);t.y=Math.round(oy+dy);
+          el.style.left=t.x+"px";el.style.top=t.y+"px";
+        }
+      };
+      const up=()=>{
+        el.classList.remove("drag");
+        el.removeEventListener("pointermove",mv);el.removeEventListener("pointerup",up);
+        el.removeEventListener("pointercancel",up);
+        if(moved)save();
+      };
+      el.addEventListener("pointermove",mv);el.addEventListener("pointerup",up);
+      el.addEventListener("pointercancel",up);
+    });
+  });
+}
+setInterval(()=>{
+  if(!state||$("tools").querySelector(".drag"))return;
+  if(toolsOf().some(t=>t.kind==="time"))renderTools();
+},60000);  /* 「いま」の線を進める */
+
 /* ===== 表示フィルタ ===== */
 function matches(n){
   if(activeTags.size&&![...activeTags].every(t=>(n.tags||[]).includes(t))) return false;
@@ -962,6 +1133,7 @@ function setStart(id){
   toast(n.start?"▶ この札をスタートにした":"▶ スタートをやめた");
 }
 function render(){
+  renderToolsIfNeeded();
   const keep=visibleSet();
   const sid=startIds();
   const existing={};
@@ -2294,11 +2466,11 @@ function endPointer(e){
 }
 stage.addEventListener("pointerup",endPointer);
 stage.addEventListener("pointercancel",endPointer);
-stage.addEventListener("contextmenu",e=>{          /* 何もない所を右クリック＝新しいスタートをその場に作って、すぐ書ける */
+stage.addEventListener("contextmenu",e=>{          /* 何もない所を右クリック＝小窓（スタート／ツール） */
   if(!onEmpty(e))return;
   e.preventDefault();
   if(ed)commitEd();
-  addFree(e.clientX,e.clientY,true);
+  openEmptyMenu(e.clientX,e.clientY);
 });
 /* ホイール／トラックパッドの拡大縮小。1回ごとに1割ずつ跳ねると速すぎるので、
    動かした量に比例して目標を決め、そこへ毎コマ少しずつ寄せる（ゆるやかに効く） */
@@ -3234,6 +3406,10 @@ document.addEventListener("keydown",e=>{
   if(ed)return;
   if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA")return;
   if(document.querySelector(".modal.open")){if(e.key==="Escape")closeModals();return;}
+  if($("subMenu").classList.contains("open")&&$("subMenu")._kind==="empty"){
+    if(frameMenuKey(e))return;
+    if(e.key==="Escape"){e.preventDefault();closeSubMenu();return;}
+  }
   if($("subMenu").classList.contains("open")&&$("subMenu")._kind==="frame"){
     if(frameMenuKey(e))return;
     if(e.key==="Escape"){e.preventDefault();closeSubMenu();return;}
@@ -3299,6 +3475,7 @@ function normalize(){
     if(!Array.isArray(m.views))m.views=[];
     if(!Array.isArray(m.frames))m.frames=[];
     if(!Array.isArray(m.notes))m.notes=[];
+    if(!Array.isArray(m.tools))m.tools=[];
     m.frames.forEach(f=>{
       f.ids=(Array.isArray(f.ids)?f.ids:[]).filter(id=>m.nodes[id]);
       if(!f.root||!m.nodes[f.root])f.root=f.ids[0];
