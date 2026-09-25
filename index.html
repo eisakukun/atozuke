@@ -242,9 +242,15 @@
   #stColors{margin-top:7px}
   #stColors .c{width:22px;height:22px;}
   /* ☑ チェックの札：やることにして、押すと済みになる */
-  .node .ck{cursor:pointer;font-size:13px;line-height:1;margin-right:2px;color:#7cff9b;
-    text-shadow:0 0 8px rgba(124,255,155,.6);}
-  .node .ck:hover{color:#fff;}
+  .node.haschk{padding-left:44px;}
+  .node .ck{position:absolute;left:10px;top:50%;transform:translateY(-50%);
+    width:26px;height:26px;border:2px solid #7cff9b;border-radius:7px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;font-size:18px;line-height:1;
+    color:#7cff9b;background:rgba(124,255,155,.07);box-shadow:0 0 14px -6px #7cff9b;
+    touch-action:none;user-select:none;}
+  .node .ck:hover{background:rgba(124,255,155,.22);box-shadow:0 0 16px -3px #7cff9b;}
+  .node .ck.on{background:#7cff9b;color:#06140a;font-weight:800;}
+  @media (pointer:coarse){ .node.haschk{padding-left:50px;} .node .ck{width:32px;height:32px;font-size:21px;} }
   .node .cnt{font-family:var(--mono);font-size:9px;color:#7cff9b;opacity:.85;margin-left:2px;}
   .node.done .txt{text-decoration:line-through;opacity:.5;}
   .node.done{border-left-color:#7cff9b;}
@@ -629,7 +635,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.24.1";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.25.1";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -1192,10 +1198,19 @@ function render(){
     el.classList.toggle("dim",!!keep&&!keep.has(id));
     el.classList.toggle("rev",review.on&&review.list[review.i]===id);
     el.classList.toggle("done",n.chk===1);
+    el.classList.toggle("haschk",n.chk!==undefined);
+    let ck=el.querySelector(":scope > .ck");
+    if(n.chk===undefined){ if(ck)ck.remove(); }
+    else{
+      if(!ck){ck=document.createElement("div");ck.className="ck";el.appendChild(ck);}
+      ck.title="押すと 済み／まだ";
+      ck.textContent=n.chk?"✓":"";
+      ck.classList.toggle("on",!!n.chk);
+    }
     el.querySelector(".head").innerHTML=
-      (n.chk!==undefined?'<span class="ck" title="押すと済み／未済">'+(n.chk?"☑":"☐")+'</span>'+chkCount(id):"")+
+      (n.chk!==undefined?chkCount(id):"")+
       (sid.has(id)?'<span class="stb">▶ START</span>':"")+
-      (r?(esc(r.icon)+" "+esc(r.name)):(sid.has(id)?"":"—"))+
+      (r?(esc(r.icon)+" "+esc(r.name)):((sid.has(id)||n.chk!==undefined)?"":"—"))+
       (sub?'<span class="subb" title="下のノートへ移る">⤵ 下のノート '+Object.keys(sub.nodes).length+'枚</span>':"");
     const txt=el.querySelector(".txt");
     if(!txt.hasAttribute("contenteditable")){
@@ -1832,11 +1847,14 @@ function wireNode(el){
     select(el.dataset.id);openSubMenu(el.dataset.id);
   });
   el.addEventListener("dblclick",e=>{e.stopPropagation();if(lastPtype==="mouse")startEdit(el);});
-  el.addEventListener("click",e=>{                 /* ☑ の四角を押した時だけ、済み／まだ */
-    if(!e.target.classList.contains("ck"))return;
+  el.addEventListener("pointerdown",e=>{           /* ☑ の四角の上では、動かさない・書き始めない */
+    if(e.target.closest(".ck"))e.stopPropagation();  /* preventDefaultはしない＝clickは来る */
+  },true);
+  el.addEventListener("click",e=>{                  /* ☑ を押した＝済み／まだ */
+    if(!e.target.closest(".ck"))return;
     e.stopPropagation();e.preventDefault();
     toggleChk(el.dataset.id);
-  });
+  },true);
 
   el.querySelectorAll(".grow").forEach(grow=>{
     let growing=false,over=null,startPt=null;
