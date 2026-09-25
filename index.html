@@ -242,15 +242,20 @@
   #stColors{margin-top:7px}
   #stColors .c{width:22px;height:22px;}
   /* ☑ チェックの札：やることにして、押すと済みになる */
-  .node.haschk{padding-left:44px;}
-  .node .ck{position:absolute;left:10px;top:50%;transform:translateY(-50%);
-    width:26px;height:26px;border:2px solid #7cff9b;border-radius:7px;cursor:pointer;
-    display:flex;align-items:center;justify-content:center;font-size:18px;line-height:1;
-    color:#7cff9b;background:rgba(124,255,155,.07);box-shadow:0 0 14px -6px #7cff9b;
-    touch-action:none;user-select:none;}
-  .node .ck:hover{background:rgba(124,255,155,.22);box-shadow:0 0 16px -3px #7cff9b;}
+  .node.haschk{padding-left:48px;}
+  .node.haschk .grow.l{left:-24px;}                 /* 左の＋は、四角と重ならない所へ逃がす */
+  .node .ck{position:absolute;left:11px;top:50%;transform:translateY(-50%);
+    width:28px;height:28px;border:2px solid #7cff9b;border-radius:7px;cursor:pointer;z-index:3;
+    display:flex;align-items:center;justify-content:center;font-size:19px;line-height:1;
+    color:#7cff9b;background:#0c1512;box-shadow:0 0 0 2px rgba(6,8,14,.9),0 0 16px -5px #7cff9b;
+    opacity:1!important;touch-action:none;user-select:none;}
+  .node .ck:hover{background:rgba(124,255,155,.25);}
   .node .ck.on{background:#7cff9b;color:#06140a;font-weight:800;}
-  @media (pointer:coarse){ .node.haschk{padding-left:50px;} .node .ck{width:32px;height:32px;font-size:21px;} }
+  .node .ck.no{border-color:#8b93ad;color:#c3cbe0;background:#14141f;box-shadow:0 0 0 2px rgba(6,8,14,.9);}
+  .node.done .txt{text-decoration:line-through;opacity:.5;}
+  .node.cancel .txt{text-decoration:line-through;opacity:.42;color:#9aa3bd;}
+  .node.cancel{border-left-color:#8b93ad;}
+  @media (pointer:coarse){ .node.haschk{padding-left:54px;} .node .ck{width:34px;height:34px;font-size:22px;} }
   .node .cnt{font-family:var(--mono);font-size:9px;color:#7cff9b;opacity:.85;margin-left:2px;}
   .node.done .txt{text-decoration:line-through;opacity:.5;}
   .node.done{border-left-color:#7cff9b;}
@@ -638,7 +643,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.26.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.27.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -1122,9 +1127,12 @@ function startId(){const s=startIds();return s.size?[...s][0]:null;}
 /* ☑ チェックの札。n.chk が無い＝ふつうの札／0＝まだ／1＝済み */
 function chkCount(id){
   const s=subtree(id);s.delete(id);
-  let all=0,done=0;
-  s.forEach(k=>{const x=state.nodes[k];if(x&&x.chk!==undefined){all++;if(x.chk)done++;}});
-  return all?'<span class="cnt">'+done+"/"+all+'</span>':"";
+  let all=0,done=0,no=0;
+  s.forEach(k=>{const x=state.nodes[k];if(!x||x.chk===undefined)return;
+    if(x.chk===2){no++;return;}                    /* やめた分は、分母から外す */
+    all++;if(x.chk===1)done++;});
+  if(!all&&!no)return"";
+  return '<span class="cnt">'+(all?done+"/"+all:"")+(no?(all?" ":"")+"✕"+no:"")+'</span>';
 }
 function toggleChkCard(id){                       /* チェックの札にする／やめる */
   const n=state.nodes[id];if(!n)return;
@@ -1133,11 +1141,12 @@ function toggleChkCard(id){                       /* チェックの札にする
   render();openInsp();save();
   toast(n.chk===undefined?"ふつうの札に戻した":"☑ チェックの札にした");
 }
-function toggleChk(id){                           /* 済み／まだ を切り替える */
+function toggleChk(id){                           /* まだ → 済み → やめた（キャンセル）→ まだ */
   const n=state.nodes[id];if(!n||n.chk===undefined)return;
   snapshot();
-  n.chk=n.chk?0:1;
+  n.chk=(n.chk+1)%3;
   render();openInsp();save();
+  if(n.chk===2)toast("✕ やめた（キャンセル）にした");
 }
 const START_COLOR="#b6ff3a";
 function startColor(n){return (n&&n.sc)||START_COLOR;}
@@ -1201,19 +1210,21 @@ function render(){
     el.classList.toggle("dim",!!keep&&!keep.has(id));
     el.classList.toggle("rev",review.on&&review.list[review.i]===id);
     el.classList.toggle("done",n.chk===1);
+    el.classList.toggle("cancel",n.chk===2);
     el.classList.toggle("haschk",n.chk!==undefined);
     let ck=el.querySelector(":scope > .ck");
     if(n.chk===undefined){ if(ck)ck.remove(); }
     else{
       if(!ck){ck=document.createElement("div");ck.className="ck";el.appendChild(ck);}
-      ck.title="押すと 済み／まだ";
-      ck.textContent=n.chk?"✓":"";
-      ck.classList.toggle("on",!!n.chk);
+      ck.title="押すと まだ→済み→やめた→まだ";
+      ck.textContent=n.chk===1?"✓":n.chk===2?"✕":"";
+      ck.classList.toggle("on",n.chk===1);
+      ck.classList.toggle("no",n.chk===2);
     }
     el.querySelector(".head").innerHTML=
-      (n.chk!==undefined?chkCount(id):"")+
+      chkCount(id)+                                  /* 下にチェックの札があれば、済み数はどの札にも出す */
       (sid.has(id)?'<span class="stb">▶ START</span>':"")+
-      (r?(esc(r.icon)+" "+esc(r.name)):((sid.has(id)||n.chk!==undefined)?"":"—"))+
+      (r?(esc(r.icon)+" "+esc(r.name)):((sid.has(id)||n.chk!==undefined||chkCount(id))?"":"—"))+
       (sub?'<span class="subb" title="下のノートへ移る">⤵ 下のノート '+Object.keys(sub.nodes).length+'枚</span>':"");
     const txt=el.querySelector(".txt");
     if(!txt.hasAttribute("contenteditable")){
@@ -2360,7 +2371,8 @@ function openInsp(){
   mi.value=n.memo||"";
   mi.oninput=()=>{state.nodes[state.selected].memo=mi.value;render();};
   const cb=$("chkBtn");
-  cb.textContent=(n.chk===undefined)?"☑ チェックの札にする":"☑ チェックをやめる";
+  cb.textContent=(n.chk===undefined)?"☑ チェックの札にする":
+    "☑ チェックを外す（今 "+(n.chk===1?"済み":n.chk===2?"やめた":"まだ")+"）";
   const sb=$("startBtn"),isS=startIds().has(n.id);
   sb.textContent=isS?(n.start?"▶ スタートをやめる":"▶ これがスタート"):"▶ スタートにもする";
   sb.disabled=isS&&!n.start;
@@ -2778,7 +2790,8 @@ function keepNode(m,id){             /* 中身のない札・「あああ」だ�
 function mapHasBody(m){return Object.values(m.nodes).some(n=>!isJunk(n.text));}
 function lineOf(m,nd){
   const r=roleById(nd.role);
-  const st=(startIds(m).has(nd.id)?"▶ ":"")+(nd.chk===undefined?"":(nd.chk?"☑ ":"☐ "));
+  const st=(startIds(m).has(nd.id)?"▶ ":"")+
+    (nd.chk===undefined?"":nd.chk===1?"☑ ":nd.chk===2?"✕やめた ":"☐ ");
   const body=isJunk(nd.text)?"（空の札）":oneLine(nd.text);
   const tg=(nd.tags||[]).length?"  "+nd.tags.map(x=>"#"+x).join(" "):"";
   return mdTag(m,nd.id)+" "+st+(r?"["+r.icon+r.name+"] ":"")+body+tg;
@@ -2965,7 +2978,7 @@ function buildMarkdown(){
          "- 札の頭の `#12` は**書いた順の番号**（小さいほど先に書いた）。番号が飛んでいる所は消した札です。枝をまたいで番号を追うと、考えがどこへ飛んだかが見えます。",
          "- `[◎目的]` などは、**書き終わってから本人が「この札は何を出したかったのか」を振り返って貼った意味**。1枚に1つだけ貼れます。",
          "- `▶` が付いた札は、本人が**そこから始めた（別の始まり）**と決めた札です。1枚の紙に複数あることがあります。",
-         "- `☐`／`☑` が付いた札は、本人が**やること**にした札。☑は済み、☐はまだです。",
+         "- `☐`／`☑`／`✕やめた` が付いた札は、本人が**やること**にした札。☑は済み、☐はまだ、`✕やめた`は**やらないと決めた（キャンセルした）**札です。",
          "- 頭に `[ ]` が無い札は、まだ意味を貼っていない札です。決めきれていない・どこにも属さない、ということ自体も情報です。","");
   const used=db.roles.map(r=>({r,c:all.filter(n=>n.role===r.id).length})).filter(x=>x.c);
   if(used.length){
