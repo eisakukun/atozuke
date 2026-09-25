@@ -443,6 +443,7 @@
   <button id="undoBtn" title="取り消し ⌘Z">↩︎</button>
   <button id="redoBtn" title="やり直し ⇧⌘Z">↪︎</button>
   <button id="addBtn" class="primary">＋<span class="lbl">札</span></button>
+  <button id="addStartBtn" title="新しいスタートを出す（真ん中に出るので、動かして置く）">▶＋<span class="lbl"> スタート</span></button>
   <button id="reviewBtn" class="gold">◎ <span class="lbl">意味を貼る</span></button>
   <button id="linkBtn" title="そことそこつながるやん線を引く（⇧＋相手の札をクリックでも同じ。外すのは ⌥⇧クリック）">⌁<span class="lbl"> つなぐ</span></button>
   <button id="frameBtn" title="選んだ札とその子ぜんぶを枠で囲う（⌘クリックでも同じ）">▢<span class="lbl"> 枠</span></button>
@@ -647,7 +648,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.28.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.29.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -2485,7 +2486,7 @@ function renderLinkBox(){
 /* ===== パン・ズーム（マウスでも指でも） ===== */
 let lastPtype="mouse";
 const pts=new Map();
-let gest=null,tapInfo=null,emptyHold=0;
+let gest=null,tapInfo=null;
 function onEmpty(e){return e.target===stage||e.target===world||e.target===svg;}
 function beginGesture(){
   stopZoomAnim();
@@ -2505,23 +2506,12 @@ stage.addEventListener("pointerdown",e=>{
   try{stage.setPointerCapture(e.pointerId);}catch(_){}
   stage.classList.add("panning");
   tapInfo=pts.size===1?{x:e.clientX,y:e.clientY,t:Date.now(),type:e.pointerType}:null;
-  emptyHold=0;
-  if(e.pointerType!=="mouse"&&pts.size===1&&onEmpty(e)){      /* 指：何もない所を0.6秒おさえる＝新しいスタート */
-    const x=e.clientX,y=e.clientY;
-    emptyHold=setTimeout(()=>{
-      emptyHold=0;tapInfo=null;gest=null;pts.clear();stage.classList.remove("panning");
-      if(ed)commitEd();
-      addFree(x,y,true);
-    },600);
-  }
   beginGesture();
 });
 stage.addEventListener("pointermove",e=>{
   if(!pts.has(e.pointerId))return;
   pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if(tapInfo&&Math.hypot(e.clientX-tapInfo.x,e.clientY-tapInfo.y)>8)tapInfo=null;
-  if(emptyHold&&(!tapInfo||Math.hypot(e.clientX-(tapInfo?tapInfo.x:0),e.clientY-(tapInfo?tapInfo.y:0))>8)){
-    clearTimeout(emptyHold);emptyHold=0;}                     /* 動かしたら＝ただの移動 */
   if(!gest)return;
   const a=[...pts.values()];
   if(gest.k===1&&a.length===1){
@@ -2536,7 +2526,6 @@ stage.addEventListener("pointermove",e=>{
   applyView();
 });
 function endPointer(e){
-  if(emptyHold){clearTimeout(emptyHold);emptyHold=0;}
   if(!pts.has(e.pointerId))return;
   pts.delete(e.pointerId);
   if(pts.size){beginGesture();tapInfo=null;return;}
@@ -3477,6 +3466,7 @@ function closeModals(){document.querySelectorAll(".modal").forEach(m=>m.classLis
 
 /* ===== ボタン・キー ===== */
 $("addBtn").onclick=()=>addFree();
+$("addStartBtn").onclick=()=>addFree(undefined,undefined,true);   /* 指の長おしはやめた（ピンチで出てしまうので） */
 $("reviewBtn").onclick=startReview;
 $("aiBtn").onclick=openAI;
 $("rolesBtn").onclick=openRoles;
