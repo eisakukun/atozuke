@@ -362,6 +362,8 @@
   #edbar .eb b{font-weight:400;font-size:9.5px;color:#4d5878;}
   #edbar .eb.on{color:#fff;border-color:#9fb0d8;}
   @media (pointer:coarse){ #edbar .eb{padding:8px 10px;font-size:13px;} #edbar .eb b{display:none;} }
+  /* 書くたびに文字が変わっても、幅は変えない（変えるとツールバー全体がズレて右端のボタンがチカチカする） */
+  #saved{display:inline-block;min-width:7.6em;}
   #saved.ng{color:var(--warn);}
   @media (max-width:760px){
     .lbl{display:none;}
@@ -577,7 +579,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.22.1";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.22.2";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -686,6 +688,7 @@ function metaNow(){return JSON.stringify({order:db.order,roles:db.roles,rolesVer
 function save(touch){
   if(quiet)return;
   clearTimeout(saveTimer);saveTimer=0;
+  if(pendMark){clearTimeout(pendMark);pendMark=0;}
   db.w=VER;
   if(touch!==false){                       /* 自分で書き換えた時だけ「いつ触ったか」を更新する */
     if(state)state.u=Date.now();
@@ -697,7 +700,11 @@ function save(touch){
   catch(e){markSaved(false);backupNow();}
   syncSoon();
 }
-function saveSoon(){clearTimeout(saveTimer);saveTimer=setTimeout(save,250);markSaved(null);}
+let pendMark=0;
+function saveSoon(){
+  clearTimeout(saveTimer);saveTimer=setTimeout(save,250);
+  if(!pendMark)pendMark=setTimeout(()=>{pendMark=0;markSaved(null);},1200);  /* すぐ終わる時は何も出さない */
+}
 function markSaved(ok){
   const el=$("saved");if(!el)return;
   el.className=ok===false?"ng":"";
