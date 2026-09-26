@@ -649,7 +649,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.31.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.31.1";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -1018,13 +1018,11 @@ function addTimeTool(cx,cy){
 }
 function timeInner(t){
   const H=24,now=new Date(),nowY=(now.getHours()+now.getMinutes()/60)/H*t.h;
-  const step=t.h/H;
-  const every=step>=14?1:step>=8?2:3;          /* 1時間ごと。つぶれるほど小さくした時だけ間引く */
   let h='<div class="tbody">';
-  for(let i=0;i<=H;i++){
+  for(let i=0;i<=H;i++){                        /* 目盛りは必ず1時間ごと（間引かない） */
     const y=i/H*t.h;
     h+='<div class="hr'+(i%6?"":" big")+'" style="top:'+y+'px"></div>';
-    if(!(i%every))h+='<div class="lb'+(i%6?"":" big")+'" style="top:'+(i===H?y-9:y+9)+'px">'+i+':00</div>';
+    h+='<div class="lb'+(i%6?"":" big")+'" style="top:'+(i===H?y-9:y+9)+'px">'+i+':00</div>';
   }
   h+='<div class="now" style="top:'+nowY+'px"></div>'+
      '<div class="nowlb" style="top:'+(nowY-9)+'px">いま</div></div>';
