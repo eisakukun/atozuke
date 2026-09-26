@@ -648,7 +648,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.29.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.30.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -754,7 +754,22 @@ function updateHistBtns(){$("undoBtn").disabled=!undoStack.length;$("redoBtn").d
 let quiet=false, saveTimer=0;
 /* 自動保存：何か変わるたび＋書いている最中は1文字ごと（0.25秒まとめ） */
 let lastEditAt=0, metaSig="";
-function metaNow(){return JSON.stringify({order:db.order,roles:db.roles,rolesVer:db.rolesVer});}
+function mergeRoles(remote,rtomb){
+  /* 向こうの並びを土台に、こちらにしか無い種類は残す。
+     「消した」と記録があるものだけ消す＝片方が古い端末でも、自分で作った意味が消えない */
+  if(!db.roleTomb||typeof db.roleTomb!=="object")db.roleTomb={};
+  if(rtomb&&typeof rtomb==="object")Object.keys(rtomb).forEach(k=>{
+    if(!db.roleTomb[k]||db.roleTomb[k]<rtomb[k])db.roleTomb[k]=rtomb[k];
+  });
+  const out=[],seen={};
+  remote.forEach(r=>{if(!r||!r.id||db.roleTomb[r.id]||seen[r.id])return;seen[r.id]=1;out.push(r);});
+  (db.roles||[]).forEach((r,i)=>{                 /* こちらにしか無い種類は、元の位置あたりに差し込む */
+    if(!r||!r.id||seen[r.id]||db.roleTomb[r.id])return;
+    seen[r.id]=1;out.splice(Math.min(i,out.length),0,r);
+  });
+  if(out.length)db.roles=out;
+}
+function metaNow(){return JSON.stringify({order:db.order,roles:db.roles,rolesVer:db.rolesVer,roleTomb:db.roleTomb||{}});}
 function save(touch){
   if(quiet)return;
   clearTimeout(saveTimer);saveTimer=0;
@@ -2723,7 +2738,10 @@ $("roleList").addEventListener("click",e=>{
     const used=Object.values(state.nodes).filter(n=>n.role===r.id).length;
     if(!confirm("「"+r.name+"」を消す？"+(used?"（この意味が貼ってある "+used+" 枚は「まだ」に戻ります）":"")))return;
     Object.values(db.maps).forEach(m=>Object.values(m.nodes).forEach(n=>{if(n.role===r.id)n.role=null;}));
-    db.roles.splice(i,1);closeRoleForm();renderRoleList();save();render();openInsp();
+    db.roles.splice(i,1);
+    if(!db.roleTomb||typeof db.roleTomb!=="object")db.roleTomb={};
+    db.roleTomb[r.id]=Date.now();                 /* 消した事実も同期する（他の端末で復活しないように） */
+    closeRoleForm();renderRoleList();save();render();openInsp();
   }
 });
 
@@ -3348,7 +3366,7 @@ function syncDot(ok){
 }
 function syPayload(){
   return {code:syCode,maps:db.maps,tomb:db.tomb||{},
-          meta:{order:db.order,roles:db.roles,rolesVer:db.rolesVer,u:db.metaU||0}};
+          meta:{order:db.order,roles:db.roles,rolesVer:db.rolesVer,roleTomb:db.roleTomb||{},u:db.metaU||0}};
 }
 function syncSoon(){
   if(!syncOn())return;
@@ -3401,7 +3419,7 @@ function takeIn(res){
   });
 
   if(meta&&(Number(meta.u)||0)>(db.metaU||0)){
-    if(Array.isArray(meta.roles)&&meta.roles.length)db.roles=meta.roles;
+    if(Array.isArray(meta.roles)&&meta.roles.length)mergeRoles(meta.roles,meta.roleTomb);
     if(meta.rolesVer)db.rolesVer=meta.rolesVer;
     if(Array.isArray(meta.order)){
       const o=[];meta.order.forEach(id=>{if(db.maps[id]&&o.indexOf(id)<0)o.push(id);});
@@ -3571,6 +3589,7 @@ window.addEventListener("resize",()=>{drawLinks(visibleSet());placeEdbar();});
 /* ===== 起動 ===== */
 function normalize(){
   if(!db.tomb||typeof db.tomb!=="object")db.tomb={};
+  if(!db.roleTomb||typeof db.roleTomb!=="object")db.roleTomb={};
   if(typeof db.metaU!=="number")db.metaU=0;
   Object.values(db.maps||{}).forEach(m=>{ if(typeof m.u!=="number")m.u=0; });
   if(!Array.isArray(db.roles)||!db.roles.length)db.roles=SEED_ROLES.map(r=>({...r}));
