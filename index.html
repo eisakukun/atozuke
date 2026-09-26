@@ -155,15 +155,16 @@
   .tool{position:absolute;pointer-events:none;}
   .tool .tbody{position:absolute;inset:0;border:1px solid #39456b;border-radius:12px;
     background:linear-gradient(180deg,rgba(18,22,40,.55),rgba(8,10,18,.55));overflow:hidden;}
-  .tool .hr{position:absolute;left:0;right:0;border-top:1px solid #46527d;}
-  .tool .hr.mid{border-top-style:dashed;opacity:.45;}
-  .tool .lb{position:absolute;left:7px;font-family:var(--mono);font-size:11px;color:#9fb0d8;
-    transform:translateY(-50%);letter-spacing:.06em;}
+  .tool .hr{position:absolute;left:0;right:0;border-top:1px solid #46527d;opacity:.5;}
+  .tool .hr.big{opacity:1;border-top-color:#5d6b9c;}      /* 0/6/12/18/24 は少し濃く */
+  .tool .lb{position:absolute;left:7px;font-family:var(--mono);font-size:10.5px;color:#8fa0c8;
+    transform:translateY(-50%);letter-spacing:.04em;}
+  .tool .lb.big{color:#cfe0ff;font-size:11.5px;}
   .tool .now{position:absolute;left:0;right:0;border-top:2px solid var(--mag);
     box-shadow:0 0 12px -1px var(--mag);}
   .tool .nowlb{position:absolute;right:6px;font-family:var(--mono);font-size:10px;color:var(--mag);
     transform:translateY(-50%);}
-  .tool .kb{position:absolute;left:4px;top:4px;pointer-events:auto;cursor:pointer;z-index:2;
+  .tool .kb{position:absolute;right:4px;top:4px;pointer-events:auto;cursor:pointer;z-index:2;
     border:1px solid var(--line);background:rgba(10,10,20,.9);border-radius:6px;
     padding:2px 6px;font-size:13px;line-height:1.5;}
   .tool.locked{opacity:1;}
@@ -648,7 +649,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.30.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.31.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -1017,11 +1018,13 @@ function addTimeTool(cx,cy){
 }
 function timeInner(t){
   const H=24,now=new Date(),nowY=(now.getHours()+now.getMinutes()/60)/H*t.h;
+  const step=t.h/H;
+  const every=step>=14?1:step>=8?2:3;          /* 1時間ごと。つぶれるほど小さくした時だけ間引く */
   let h='<div class="tbody">';
   for(let i=0;i<=H;i++){
     const y=i/H*t.h;
-    h+='<div class="hr'+(i%3?" mid":"")+'" style="top:'+y+'px"></div>';
-    if(!(i%3))h+='<div class="lb" style="top:'+(i===H?y-9:y+9)+'px">'+i+':00</div>';  /* 24:00 は線の上に置く */
+    h+='<div class="hr'+(i%6?"":" big")+'" style="top:'+y+'px"></div>';
+    if(!(i%every))h+='<div class="lb'+(i%6?"":" big")+'" style="top:'+(i===H?y-9:y+9)+'px">'+i+':00</div>';
   }
   h+='<div class="now" style="top:'+nowY+'px"></div>'+
      '<div class="nowlb" style="top:'+(nowY-9)+'px">いま</div></div>';
