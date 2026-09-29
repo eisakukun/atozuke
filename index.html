@@ -415,6 +415,8 @@
   #edbar .eb:hover{border-color:var(--cyan);color:#fff;}
   #edbar .eb b{font-weight:400;font-size:9.5px;color:#4d5878;}
   #edbar .eb.on{color:#fff;border-color:#9fb0d8;}
+  #edbar .eb.warn{color:#ff8da3;border-color:#5b2a35;margin-left:auto;}
+  #edbar .eb.warn:hover{border-color:var(--warn);color:#fff;}
   @media (pointer:coarse){ #edbar .eb{padding:8px 10px;font-size:13px;} #edbar .eb b{display:none;} }
   /* 書くたびに文字が変わっても、幅は変えない（変えるとツールバー全体がズレて右端のボタンがチカチカする） */
   #saved{display:inline-block;min-width:7.6em;}
@@ -608,6 +610,7 @@
     <span class="eb" data-a="child"><b>⇥</b>下に札</span>
     <span class="eb" data-a="br"><b>⇧⏎</b>改行</span>
     <span class="eb" data-a="done"><b>esc</b>完了</span>
+    <span class="eb warn" data-a="del">🗑 この札を消す</span>
   </div>
   <div class="row" id="edRoles"></div>
 </div>
@@ -649,7 +652,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.31.1";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.32.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -2041,6 +2044,23 @@ function endEdit(){
   edbar.classList.remove("open");
   render();openInsp();
 }
+function delFromEdit(){                    /* 書いている札をその場で消す（スマホにはDeleteキーが無いので） */
+  if(!ed)return;
+  const id=ed.id,n=state.nodes[id];if(!n)return;
+  const set=subtree(id),body=oneLine(n.text||"");
+  const kids=set.size-1;
+  if((kids>0||(body&&!isPH(n.text)))&&
+     !confirm("「"+(isPH(n.text)?"（まだ書いていない札）":body)+"」"+
+              (kids?"とその下 "+kids+" 枚":"")+"を消します。（⌘Zで戻せます）"))return;
+  const e=ed;ed=null;closeEd(e);
+  if(document.activeElement===e.t)e.t.blur();
+  document.body.classList.remove("editing");
+  edbar.classList.remove("open");
+  snapshot();set.forEach(k=>delete state.nodes[k]);
+  state.selected=null;
+  render();openInsp();save();
+  toast("消した（⌘Zで戻せる）");
+}
 function lineBreak(){
   if(!ed)return;
   if(!document.execCommand("insertLineBreak"))document.execCommand("insertText",false,"\n");
@@ -2155,6 +2175,7 @@ function edbarAct(e){
   else if(a==="child")nextFromEdit("child");
   else if(a==="br")lineBreak();
   else if(a==="done")endEdit();
+  else if(a==="del")delFromEdit();
   else if(k){setRole(ed.id,k==="__none"?null:k);hideEdbar();}   /* 意味を選んだらバーは引っ込める（書くのは続けられる） */
 }
 edbar.addEventListener("mousedown",edbarAct);
