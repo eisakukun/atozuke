@@ -417,7 +417,8 @@
   #edbar .eb.on{color:#fff;border-color:#9fb0d8;}
   #edbar .eb.warn{color:#ff8da3;border-color:#5b2a35;margin-left:auto;}
   #edbar .eb.warn:hover{border-color:var(--warn);color:#fff;}
-  @media (pointer:coarse){ #edbar .eb{padding:8px 10px;font-size:13px;} #edbar .eb b{display:none;} }
+  @media (pointer:coarse){ #edbar .eb{padding:8px 10px;font-size:13px;} #edbar .eb b{display:none;}
+    #edbar .eb.touchhide{display:none;} }                    /* 指のときは⏎がそのまま改行なので、このボタンは要らない */
   /* 書くたびに文字が変わっても、幅は変えない（変えるとツールバー全体がズレて右端のボタンがチカチカする） */
   #saved{display:inline-block;min-width:7.6em;}
   #saved.ng{color:var(--warn);}
@@ -608,7 +609,7 @@
   <div class="row">
     <span class="eb" data-a="next"><b>⏎</b>次の札</span>
     <span class="eb" data-a="child"><b>⇥</b>下に札</span>
-    <span class="eb" data-a="br"><b>⇧⏎</b>改行</span>
+    <span class="eb touchhide" data-a="br"><b>⇧⏎</b>改行</span>
     <span class="eb" data-a="done"><b>esc</b>完了</span>
     <span class="eb warn" data-a="del">🗑 この札を消す</span>
   </div>
@@ -652,7 +653,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.32.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.33.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -2088,6 +2089,7 @@ ED_EVENTS.keydown=function(ev){
   if(ev.isComposing||ev.keyCode===229)return;                 /* 日本語変換中のEnterは確定だけ */
   const k=ev.key;
   if(k==="Enter"){
+    if(touchy()&&!ev.shiftKey&&!ev.metaKey&&!ev.ctrlKey)return;  /* 指の端末＝そのまま改行 */
     ev.preventDefault();
     if(ev.shiftKey){lineBreak();return;}                      /* ⇧⏎＝札の中で改行 */
     if(ev.metaKey||ev.ctrlKey){endEdit();return;}             /* ⌘⏎＝ここで書き終わる */
@@ -2103,7 +2105,10 @@ ED_EVENTS.keydown=function(ev){
   }
 };
 ED_EVENTS.beforeinput=function(ev){                           /* キーの来ないキーボード（iPhoneなど）の改行キー */
-  if(ed&&ev.inputType==="insertParagraph"&&!ev.isComposing){ev.preventDefault();nextFromEdit("sib");}
+  if(ed&&ev.inputType==="insertParagraph"&&!ev.isComposing){
+    if(touchy())return;                                       /* 指の端末＝そのまま改行（⇧⏎が押せないので） */
+    ev.preventDefault();nextFromEdit("sib");
+  }
 };
 ED_EVENTS.input=function(){commitEd();saveSoon();drawLinks(visibleSet());placeEdbar();};
 ED_EVENTS.blur=function(ev){
@@ -2132,6 +2137,7 @@ function renderEdbar(){
 }
 function hideEdbar(){edbar.classList.remove("open");}
 function docked(){return matchMedia("(max-width:760px), (pointer:coarse)").matches;}
+function touchy(){return matchMedia("(pointer:coarse)").matches;}   /* 指で使う端末（⇧⏎が押せない） */
 function placeEdbar(){
   if(!ed)return;
   const vv=window.visualViewport,vt=vv?vv.offsetTop:0,vh=vv?vv.height:innerHeight,
