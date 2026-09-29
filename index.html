@@ -679,7 +679,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.34.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.34.1";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -899,6 +899,7 @@ function openSubMenu(nodeId){
     (sub?'<button class="gold" data-a="go">⤵ 下のノートへ移る（'+Object.keys(sub.nodes).length+'枚）<kbd>⏎</kbd></button>'
         :'<button class="gold" data-a="makego">⤵ 下のノートを作って移る<kbd>⏎</kbd></button>'+
          '<button data-a="make">＋ 作るだけ（ここに残る）<kbd>⇧⏎</kbd></button>')+
+    '<button data-a="mir">'+(n.sync?"🔗 ほかの紙とのつなぎを外す":"🔗 ほかの紙の札とつなぐ")+'</button>'+
     '<button data-a="x">やめる<kbd>esc</kbd></button>';
   box._node=nodeId;box._kind="sub";
   const r=el.getBoundingClientRect();
@@ -937,8 +938,11 @@ function emptyAct(k){
 }
 function subAct(a){
   const id=$("subMenu")._node;
-  if(a==="go")goSub(id);else if(a==="makego")makeSub(id,true);else if(a==="make")makeSub(id,false);
   closeSubMenu();
+  if(a==="go")goSub(id);
+  else if(a==="makego")makeSub(id,true);
+  else if(a==="make")makeSub(id,false);
+  else if(a==="mir"){select(id);openMirPicker();}     /* 右クリックの小窓からも 🔗 を出せるように */
 }
 function closeSubMenu(){$("subMenu").classList.remove("open");}
 function renderCrumb(){
