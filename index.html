@@ -65,6 +65,21 @@
     border:1px solid var(--cyan);color:#dff;background:rgba(0,229,255,.12);font-size:9.5px;cursor:pointer;
     letter-spacing:0;box-shadow:0 0 10px -3px var(--cyan);white-space:nowrap;}
   .node .subb:hover{background:rgba(0,229,255,.3);color:#fff;}
+  /* 🔗 ほかの紙の札と同期している印 */
+  .node .mirb{display:inline-flex;align-items:center;gap:3px;margin-left:auto;padding:1px 7px;border-radius:999px;
+    border:1px solid #c58cff;color:#eadfff;background:rgba(197,140,255,.14);font-size:9.5px;cursor:pointer;
+    letter-spacing:0;box-shadow:0 0 10px -3px #c58cff;white-space:nowrap;}
+  .node .mirb:hover{background:rgba(197,140,255,.35);color:#fff;}
+  .node.mir{border-right:3px solid #c58cff;}
+  body.pairing #world .node{cursor:crosshair;}
+  body.pairing #world .node:hover{box-shadow:0 0 0 2px #c58cff,0 0 24px -4px #c58cff;}
+  #pairbar{position:fixed;left:50%;transform:translateX(-50%);top:calc(56px + var(--sat));z-index:40;
+    display:none;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;
+    background:rgba(16,8,26,.96);border:1px solid #c58cff;box-shadow:0 0 30px -8px #c58cff;
+    font-size:12px;color:#eadfff;font-family:var(--mono);max-width:92vw;}
+  #pairbar.open{display:flex;}
+  #pairbar b{color:#fff;font-weight:600;}
+  #mirList .calrow .d{min-width:auto;}
   .node.hassub{box-shadow:4px 4px 0 -1px #0c0c17,5px 5px 0 0 var(--cyan),0 8px 22px rgba(0,0,0,.6);}
   #crumb{display:none;align-items:center;gap:4px;margin-left:8px;padding-left:10px;border-left:1px solid var(--line);
     font-size:12px;font-family:var(--mono);white-space:nowrap;flex:none;}
@@ -519,6 +534,7 @@
   <section><h3>メモ</h3><textarea id="memoInput" placeholder="補足・思いついたこと"></textarea></section>
   <section>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button id="mirBtn">🔗 ほかの紙とつなぐ</button>
       <button id="chkBtn">☑ チェックの札にする</button>
       <button id="cancelBtn">✕ キャンセルにする</button>
       <button id="startBtn">▶ スタートにする</button>
@@ -630,6 +646,16 @@
   </div>
   <div id="syState" class="subtle" style="margin-top:12px"></div>
 </div>
+<div id="pairbar"><span id="pairtx"></span><button id="pairStop">やめる</button></div>
+
+<div class="modal" id="mir" style="border-color:#c58cff;box-shadow:0 0 60px -14px #c58cff">
+  <h2 style="color:#c58cff">🔗 ほかの紙の札とつなぐ
+    <span class="sp"><button id="mirClose">閉じる</button></span></h2>
+  <div class="subtle">どの紙の札とつなぐ？　紙を選ぶとその紙へ移るので、つなぎたい札を押す。<br>
+    つないだ札どうしは、片方を直すと<b>もう片方も同じ文になる</b>（ずっと続く）。</div>
+  <div id="mirList" style="margin-top:12px"></div>
+</div>
+
 <div class="modal" id="cal" style="border-color:#7cff9b;box-shadow:0 0 60px -14px #7cff9b">
   <h2 style="color:#7cff9b">📅 日めくり（毎日のまとめ）
     <span class="sp"><button id="calClose">閉じる</button></span></h2>
@@ -653,7 +679,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.33.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.34.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -1117,6 +1143,103 @@ setInterval(()=>{
   if(toolsOf().some(t=>t.kind==="time"))renderTools();
 },60000);  /* 「いま」の線を進める */
 
+/* =========================================================
+   🔗 ほかの紙の札と同期（ミラー）
+   札に n.sync="s…" を持たせ、同じ印の札は「どの紙にあっても同じ文」になる。
+   片方を書き換えたら、その場でもう片方にも書き写す（紙をまたいで続く）。
+   ========================================================= */
+let pairing=null;                                  /* {map,node}＝つなぎ元。つなぎ先を選ぶのを待っている */
+function twinsOf(syncId,skipMap,skipNode){
+  const out=[];
+  if(!syncId)return out;
+  db.order.forEach(mid=>{
+    const m=db.maps[mid];if(!m)return;
+    Object.values(m.nodes).forEach(n=>{
+      if(n.sync!==syncId)return;
+      if(mid===skipMap&&n.id===skipNode)return;
+      out.push({mid,m,n});
+    });
+  });
+  return out;
+}
+function spreadSync(nodeId,mapId){                 /* 書いた文を、つないだ相手にも写す */
+  const mid=mapId||db.cur,m=db.maps[mid];if(!m)return;
+  const n=m.nodes[nodeId];if(!n||!n.sync)return;
+  let moved=false;
+  twinsOf(n.sync,mid,nodeId).forEach(t=>{
+    if(t.n.text===n.text)return;
+    t.n.text=n.text;t.m.u=Date.now();moved=true;
+  });
+  if(moved)render();
+}
+function openMirPicker(){
+  if(ed)commitEd();
+  const id=state.selected;
+  if(!id||!state.nodes[id]){toast("先に、つなぎたい札を選んで");return;}
+  const n=state.nodes[id];
+  if(n.sync){                                      /* すでにつないである＝外す */
+    const tw=twinsOf(n.sync,db.cur,id);
+    if(!confirm("この札のつなぎを外します（"+tw.length+"枚とのつながり）。文はそのまま残ります。"))return;
+    snapshot();
+    const sid=n.sync;delete n.sync;
+    if(tw.length===1)delete tw[0].n.sync;          /* 相手が1枚だけなら、あちらの印も外す */
+    render();openInsp();save();toast("🔗 つなぎを外した");
+    return;
+  }
+  const rows=db.order.filter(mid=>mid!==db.cur&&db.maps[mid]).map(mid=>{
+    const m=db.maps[mid],cnt=Object.values(m.nodes).filter(x=>!isJunk(x.text)).length;
+    return '<div class="calrow" data-m="'+mid+'"><span class="t">'+esc(mapTitle(m))+
+      (upOf(m)?'<span class="c">（下のノート）</span>':"")+'</span><span class="c">'+cnt+'枚</span></div>';
+  }).join("");
+  $("mirList").innerHTML=rows||'<div class="subtle">ほかに紙がない。＋新規で紙を作ってから。</div>';
+  $("mirList").querySelectorAll(".calrow").forEach(el=>el.onclick=()=>{
+    closeModals();
+    startPair(db.cur,id,el.dataset.m);
+  });
+  openModal("mir");
+}
+function startPair(fromMap,fromNode,toMap){
+  pairing={map:fromMap,node:fromNode};
+  const t=db.maps[fromMap].nodes[fromNode];
+  $("pairtx").innerHTML="🔗 <b>"+esc(oneLine(isPH(t.text)?"（まだ書いていない札）":t.text).slice(0,24))+
+    "</b> とつなぐ札を、この紙で押す";
+  $("pairbar").classList.add("open");
+  document.body.classList.add("pairing");
+  switchTo(toMap);
+  toast("つなぐ相手の札を押す（escでやめる）");
+}
+function stopPair(){
+  pairing=null;
+  $("pairbar").classList.remove("open");
+  document.body.classList.remove("pairing");
+}
+function finishPair(toNode){
+  if(!pairing)return;
+  const fm=db.maps[pairing.map],fn=fm&&fm.nodes[pairing.node];
+  const tn=state.nodes[toNode];
+  if(!fn||!tn){stopPair();return;}
+  if(fm===state&&fn.id===tn.id){toast("同じ札です");return;}
+  const tHas=!isPH(tn.text);
+  if(tHas&&!confirm("この札の文は「"+oneLine(fn.text).slice(0,20)+"」に置きかわります。よろしい？")){return;}
+  snapshot();
+  const sid=fn.sync||tn.sync||("s"+Date.now().toString(36)+Math.random().toString(36).slice(2,5));
+  if(tn.sync&&tn.sync!==sid)twinsOf(tn.sync).forEach(t=>{t.n.sync=sid;});
+  fn.sync=sid;tn.sync=sid;
+  tn.text=fn.text;
+  fm.u=Date.now();state.u=Date.now();
+  stopPair();
+  select(toNode);render();openInsp();save();
+  toast("🔗 つないだ。どちらを直しても、もう片方も変わる");
+}
+function goToTwin(id){                             /* 🔗 の印を押す＝つないだ相手の紙へ飛ぶ */
+  const n=state.nodes[id];if(!n||!n.sync)return;
+  const tw=twinsOf(n.sync,db.cur,id);
+  if(!tw.length){toast("つないだ相手が見つからない");return;}
+  const t=tw[0];
+  switchTo(t.mid);
+  if(state.nodes[t.n.id]){select(t.n.id);requestAnimationFrame(()=>focusNode(t.n.id));}
+}
+
 /* ===== 表示フィルタ ===== */
 function matches(n){
   if(activeTags.size&&![...activeTags].every(t=>(n.tags||[]).includes(t))) return false;
@@ -1238,6 +1361,7 @@ function render(){
     el.style.setProperty("--st",sid.has(id)?startColor(n):"");
     const sub=subOf(n);
     el.classList.toggle("hassub",!!sub);
+    el.classList.toggle("mir",!!n.sync);
     el.classList.toggle("selected",state.selected===id);
     el.classList.toggle("dim",!!keep&&!keep.has(id));
     el.classList.toggle("rev",review.on&&review.list[review.i]===id);
@@ -1256,7 +1380,9 @@ function render(){
       chkCount(id)+                                  /* 下にチェックの札があれば、済み数はどの札にも出す */
       (sid.has(id)?'<span class="stb">▶ START</span>':"")+
       (r?(esc(r.icon)+" "+esc(r.name)):((sid.has(id)||n.chk!==undefined||chkCount(id))?"":"—"))+
-      (sub?'<span class="subb" title="下のノートへ移る">⤵ 下のノート '+Object.keys(sub.nodes).length+'枚</span>':"");
+      (sub?'<span class="subb" title="下のノートへ移る">⤵ 下のノート '+Object.keys(sub.nodes).length+'枚</span>':"")+
+      (n.sync?'<span class="mirb" title="つないだ相手の紙へ移る">🔗 '+
+        esc(mapTitle((twinsOf(n.sync,db.cur,id)[0]||{}).m||state).slice(0,8))+'</span>':"");
     const txt=el.querySelector(".txt");
     if(!txt.hasAttribute("contenteditable")){
       txt.textContent=(n.text&&n.text.trim())?n.text:PH;
@@ -1802,6 +1928,12 @@ function wireNode(el){
   const endHold=()=>{clearTimeout(holdT);holdT=null;
     if(group){world.querySelectorAll(".node.grab,.node.grabkid").forEach(x=>x.classList.remove("grab","grabkid"));group=null;}};
   el.addEventListener("pointerdown",e=>{
+    if(pairing){                                     /* 🔗 つなぎ先を選んでいる最中 */
+      e.stopPropagation();e.preventDefault();finishPair(el.dataset.id);return;
+    }
+    if(e.target.closest(".mirb")){                   /* 🔗 バッジ＝つないだ相手の紙へ */
+      e.stopPropagation();e.preventDefault();goToTwin(el.dataset.id);return;
+    }
     if(e.target.closest(".subb")&&!linking){         /* ⤵ バッジ＝そのまま下のノートへ */
       e.stopPropagation();e.preventDefault();goSub(el.dataset.id);return;
     }
@@ -2110,7 +2242,7 @@ ED_EVENTS.beforeinput=function(ev){                           /* キーの来な
     ev.preventDefault();nextFromEdit("sib");
   }
 };
-ED_EVENTS.input=function(){commitEd();saveSoon();drawLinks(visibleSet());placeEdbar();};
+ED_EVENTS.input=function(){commitEd();spreadSync(ed&&ed.id);saveSoon();drawLinks(visibleSet());placeEdbar();};
 ED_EVENTS.blur=function(ev){
   if(!ed||ev.target!==ed.t)return;
   commitEd();save();
@@ -2424,6 +2556,8 @@ function openInsp(){
   const mi=$("memoInput");
   mi.value=n.memo||"";
   mi.oninput=()=>{state.nodes[state.selected].memo=mi.value;render();};
+  const mb=$("mirBtn"),tw=n.sync?twinsOf(n.sync,db.cur,n.id):[];
+  mb.textContent=n.sync?("🔗 つなぎを外す（"+tw.length+"枚）"):"🔗 ほかの紙とつなぐ";
   const cb=$("chkBtn");
   cb.textContent=(n.chk===undefined)?"☑ チェックの札にする":
     "☑ チェックを外す（今 "+(n.chk===1?"済み":"まだ")+"）";
@@ -3543,6 +3677,9 @@ $("cutBtn").onclick=cutParent;
 $("subBtn").onclick=()=>{if(state.selected)openSubMenu(state.selected);};
 $("startBtn").onclick=()=>{if(state.selected)setStart(state.selected);};
 $("chkBtn").onclick=()=>{if(state.selected)toggleChkCard(state.selected);};
+$("mirBtn").onclick=openMirPicker;
+$("mirClose").onclick=closeModals;
+$("pairStop").onclick=()=>{stopPair();toast("やめた");};
 $("cancelBtn").onclick=()=>{if(state.selected)toggleCancel(state.selected);};
 document.addEventListener("keydown",e=>{
   if(e.key==="Shift"&&!ed&&state.selected&&!document.querySelector(".modal.open"))
@@ -3592,6 +3729,7 @@ document.addEventListener("keydown",e=>{
       if(b)b.click();return;}
     if(e.key==="Escape"){e.preventDefault();closeSubMenu();return;}
   }
+  if(pairing&&e.key==="Escape"){e.preventDefault();stopPair();toast("🔗 やめた");return;}
   if(linking&&e.key==="Escape"){e.preventDefault();stopLink();toast("⌁ やめた");return;}
   if(selFrame&&e.key==="Escape"){e.preventDefault();selFrame=null;renderFrames();paintFrameMarks();return;}
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="z"){e.preventDefault();e.shiftKey?redo():undo();return;}
