@@ -685,7 +685,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.35.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.36.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -1186,15 +1186,83 @@ function twinsOf(syncId,skipMap,skipNode){
   });
   return out;
 }
-function spreadSync(nodeId,mapId){                 /* 書いた文を、つないだ相手にも写す */
+const MIR_FIELDS=["text","role","chk","cancel","memo","tags"];
+function copyFields(src,dst){
+  let moved=false;
+  MIR_FIELDS.forEach(k=>{
+    const v=(k==="tags")?JSON.stringify(src[k]||[]):src[k];
+    const w=(k==="tags")?JSON.stringify(dst[k]||[]):dst[k];
+    if(v===w)return;
+    if(k==="tags")dst.tags=(src.tags||[]).slice();
+    else if(src[k]===undefined)delete dst[k];
+    else dst[k]=src[k];
+    moved=true;
+  });
+  return moved;
+}
+function spreadSync(nodeId,mapId){                 /* 書いた文・意味・☑を、つないだ相手にも写す */
   const mid=mapId||db.cur,m=db.maps[mid];if(!m)return;
   const n=m.nodes[nodeId];if(!n||!n.sync)return;
   let moved=false;
   twinsOf(n.sync,mid,nodeId).forEach(t=>{
-    if(t.n.text===n.text)return;
-    t.n.text=n.text;t.m.u=Date.now();moved=true;
+    if(copyFields(n,t.n)){t.m.u=Date.now();moved=true;}
   });
   if(moved)render();
+}
+function kidsIn2(m,id){return Object.values(m.nodes).filter(n=>n.parent===id);}
+function newSyncId(){return "s"+Date.now().toString(36)+Math.random().toString(36).slice(2,5);}
+function nextId(m){                                /* その紙で次の札id */
+  if(!m.seq)m.seq=Object.keys(m.nodes).length+1;
+  let id;do{id="n"+(m.seq++);}while(m.nodes[id]);
+  return id;
+}
+function makeTwinChild(sm,sn,sp,tm,tp){            /* 相手の紙に、同じ子を作る（親からの位置ずれも同じに） */
+  const id=nextId(tm);
+  const n={id:id,text:sn.text,x:tp.x+(sn.x-sp.x),y:tp.y+(sn.y-sp.y),parent:tp.id,
+           role:sn.role||null,tags:(sn.tags||[]).slice(),memo:sn.memo||"",links:[]};
+  if(sn.chk!==undefined)n.chk=sn.chk;
+  if(sn.cancel)n.cancel=sn.cancel;
+  if(!sn.sync)sn.sync=newSyncId();
+  n.sync=sn.sync;
+  tm.nodes[id]=n;tm.u=Date.now();
+  return n;
+}
+function reconcileMirrors(){                       /* つないだ札の下の枝を、両方の紙にそろえる */
+  let changed=false,guard=0;
+  const pass=()=>{
+    let did=false;
+    db.order.forEach(mid=>{
+      const m=db.maps[mid];if(!m)return;
+      Object.values(m.nodes).forEach(n=>{
+        if(!n.sync)return;
+        twinsOf(n.sync,mid,n.id).forEach(t=>{
+          const mine=kidsIn2(m,n.id), theirs=kidsIn2(t.m,t.n.id);
+          const have=new Set(theirs.map(k=>k.sync).filter(Boolean));
+          mine.forEach(k=>{
+            if(k.sync&&have.has(k.sync))return;     /* 向こうにもうある */
+            if(k.sync&&twinsOf(k.sync,mid,k.id).length)return;  /* 別の場所で見つかる＝触らない */
+            makeTwinChild(m,k,n,t.m,t.n);did=true;
+          });
+        });
+      });
+    });
+    return did;
+  };
+  while(pass()&&guard++<12)changed=true;            /* 孫・ひ孫まで降りる */
+  return changed;
+}
+function delTwinsOf(ids,mapId){                    /* 消した札の相手も消す（その下ごと） */
+  const m=db.maps[mapId||db.cur];if(!m)return;
+  ids.forEach(id=>{
+    const n=m.nodes[id];if(!n||!n.sync)return;
+    twinsOf(n.sync,mapId||db.cur,id).forEach(t=>{
+      const kill=new Set([t.n.id]);let go=true;
+      while(go){go=false;Object.values(t.m.nodes).forEach(x=>{
+        if(x.parent&&kill.has(x.parent)&&!kill.has(x.id)){kill.add(x.id);go=true;}});}
+      kill.forEach(k=>delete t.m.nodes[k]);
+      t.m.u=Date.now();
+    });
+  });
 }
 function openMirPicker(){
   if(ed)commitEd();
@@ -1252,8 +1320,9 @@ function finishPair(toNode){
   tn.text=fn.text;
   fm.u=Date.now();state.u=Date.now();
   stopPair();
+  reconcileMirrors();                              /* 相手の下の札も、この紙に出す */
   select(toNode);render();openInsp();save();
-  toast("🔗 つないだ。どちらを直しても、もう片方も変わる");
+  toast("🔗 つないだ。下の札もそろえた（どちらを直しても両方変わる）");
 }
 function goToTwin(id){                             /* 🔗 の印を押す＝つないだ相手の紙へ飛ぶ */
   const n=state.nodes[id];if(!n||!n.sync)return;
@@ -1311,6 +1380,7 @@ function toggleCancel(id){                        /* ✕ キャンセルモー�
   const n=state.nodes[id];if(!n)return;
   snapshot();
   if(n.cancel)delete n.cancel;else n.cancel=1;
+  spreadSync(id);
   render();openInsp();save();
   toast(n.cancel?"✕ キャンセルにした":"キャンセルを外した");
 }
@@ -1325,6 +1395,7 @@ function toggleChk(id){                           /* まだ ⇄ 済み */
   const n=state.nodes[id];if(!n||n.chk===undefined)return;
   snapshot();
   n.chk=n.chk?0:1;
+  spreadSync(id);
   render();openInsp();save();
 }
 const START_COLOR="#b6ff3a";
@@ -1357,7 +1428,13 @@ function setStart(id){
   render();openInsp();
   toast(n.start?"▶ この札をスタートにした":"▶ スタートをやめた");
 }
+let mirBusy=false;
 function render(){
+  if(!mirBusy){                                    /* 🔗 つないだ札の下の枝を、描く前にそろえる */
+    mirBusy=true;
+    try{ if(reconcileMirrors())saveSoon(); }catch(e){}
+    mirBusy=false;
+  }
   renderToolsIfNeeded();
   const keep=visibleSet();
   const sid=startIds();
@@ -2213,7 +2290,7 @@ function delFromEdit(){                    /* 書いている札をその場で�
   if(document.activeElement===e.t)e.t.blur();
   document.body.classList.remove("editing");
   edbar.classList.remove("open");
-  snapshot();set.forEach(k=>delete state.nodes[k]);
+  snapshot();delTwinsOf([...set]);set.forEach(k=>delete state.nodes[k]);
   state.selected=null;
   render();openInsp();save();
   toast("消した（⌘Zで戻せる）");
@@ -2236,6 +2313,7 @@ function setRole(id,rid){
   if(ed&&ed.id===id)commitEd();
   snapshot();
   n.role=(n.role===rid)?null:rid;
+  spreadSync(id);
   render();openInsp();
   if(ed){renderEdbar();placeEdbar();}
 }
@@ -2427,7 +2505,7 @@ function delNode(){
   const id=state.selected;if(!id||!state.nodes[id])return;
   const set=subtree(id);
   if(set.size>1&&!confirm("「"+oneLine(state.nodes[id].text)+"」とその下 "+(set.size-1)+" 枚を消します。（⌘Zで戻せます）"))return;
-  snapshot();set.forEach(k=>delete state.nodes[k]);
+  snapshot();delTwinsOf([...set]);set.forEach(k=>delete state.nodes[k]);
   state.selected=null;render();openInsp();
   toast("消した（⌘Zで戻せる）");
 }
@@ -2576,10 +2654,11 @@ function openInsp(){
   });
   const ti=$("tagInput");
   ti.value=(n.tags||[]).join(" ");
-  ti.oninput=()=>{state.nodes[state.selected].tags=ti.value.split(/[\s,、#＃]+/).filter(Boolean);render();};
+  ti.oninput=()=>{state.nodes[state.selected].tags=ti.value.split(/[\s,、#＃]+/).filter(Boolean);
+    spreadSync(state.selected);render();};
   const mi=$("memoInput");
   mi.value=n.memo||"";
-  mi.oninput=()=>{state.nodes[state.selected].memo=mi.value;render();};
+  mi.oninput=()=>{state.nodes[state.selected].memo=mi.value;spreadSync(state.selected);render();};
   const mb=$("mirBtn"),tw=n.sync?twinsOf(n.sync,db.cur,n.id):[];
   mb.textContent=n.sync?("🔗 つなぎを外す（"+tw.length+"枚）"):"🔗 ほかの紙とつなぐ";
   const cb=$("chkBtn");
