@@ -58,6 +58,12 @@
   .tab .nm.edit{outline:none;color:#fff;border-bottom:1px solid var(--gold);cursor:text;
     overflow:visible;text-overflow:clip;}
   .tab:has(.nm.edit){max-width:none;}
+  .tab.day{border-color:#2f4a38;background:#0a1410;}
+  .tab.day .nm{color:#bfe9cc;}
+  .tab.day.on{border-color:#7cff9b;background:#0d1b12;box-shadow:0 0 14px -5px #7cff9b;color:#fff;}
+  .tab.more{border-style:dashed;color:#7cff9b;}
+  .tabsep{display:flex;align-items:center;padding:0 4px;margin:0 2px;color:#7cff9b;font-size:12px;
+    border-left:1px solid #2f4a38;opacity:.9;user-select:none;}
   .tab .x{opacity:.5;font-size:11px;}
   .tab .x:hover{opacity:1;color:var(--warn);}
   /* ⤵ 下のノート：札の中のバッジ／上の道しるべ／⇧クリックの小窓 */
@@ -679,7 +685,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.34.1";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.35.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -999,17 +1005,31 @@ function renderTabs(){
   renderCrumb();
   if(tabEditing)return;                       /* 名前を書いている途中は描き直さない */
   const top=chainOf(db.cur)[0];
-  const html=db.order.map(id=>{
-    const m=db.maps[id];if(!m||upOf(m))return"";
+  const DAY_SHOW=5;                              /* 日めくりは新しい方から何枚まで並べるか */
+  const tab=(id)=>{
+    const m=db.maps[id];if(!m)return"";
     const t=oneLine(mapTitle(m));
     const cut=id===top?18:11;                    /* 開いている紙だけ少し長く見せる */
-    return '<span class="tab'+(id===top?" on":"")+'" data-id="'+id+'" title="'+esc(t)+' ／ ダブルクリックで名前を変える">'+
+    return '<span class="tab'+(id===top?" on":"")+(dayOf(m)?" day":"")+'" data-id="'+id+
+      '" title="'+esc(t)+' ／ ダブルクリックで名前を変える">'+
       '<span class="nm">'+esc(t.length>cut?t.slice(0,cut)+"…":t)+'</span>'+
       '<span class="x" data-x="'+id+'">✕</span></span>';
-  }).join("");
+  };
+  const usable=db.order.filter(id=>db.maps[id]&&!upOf(db.maps[id]));
+  const plain=usable.filter(id=>!dayOf(db.maps[id]));
+  const days=usable.filter(id=>dayOf(db.maps[id]))
+    .sort((a,b)=>dayOf(db.maps[a])<dayOf(db.maps[b])?1:-1);       /* 新しい日が左 */
+  let show=days.slice(0,DAY_SHOW);
+  if(days.includes(top)&&!show.includes(top))show=show.concat(top); /* 開いている日は必ず出す */
+  const hidden=days.length-show.length;
+  const html=plain.map(tab).join("")+
+    (days.length?'<span class="tabsep" title="ここから下は 📅 日めくりで作った紙">📅</span>':"")+
+    show.map(tab).join("")+
+    (hidden>0?'<span class="tab more" id="tabMore" title="日めくりを開く">…ほか'+hidden+'日</span>':"");
   if($("tabs")._h===html)return;
   $("tabs")._h=html;$("tabs").innerHTML=html;
-  $("tabs").querySelectorAll(".tab").forEach(el=>{
+  const more=$("tabMore");if(more)more.onclick=openCal;
+  $("tabs").querySelectorAll(".tab:not(.more)").forEach(el=>{
     el.onclick=e=>{
       if(el._held&&Date.now()-el._held<600){el._held=0;return;}   /* 長おしで名前を変えた直後は、紙を切り替えない */
       if(e.target.dataset.x){delMap(e.target.dataset.x);return;}
