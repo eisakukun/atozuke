@@ -127,6 +127,7 @@
   body.linking #world .node,body.shiftlink #world .node{cursor:crosshair}
   body.linking #world .node:hover,body.shiftlink #world .node:hover{box-shadow:0 0 0 2px #ff2e97,0 0 22px -4px #ff2e97}
   svg#links .vwt{font-size:12px;font-family:var(--mono);paint-order:stroke;stroke:#08080f;stroke-width:4px;}
+  #lkShowBtn.warnoff{color:var(--warn);border-color:var(--warn);background:#1b0a10;}
   .lwarn{border:1px solid var(--gold);border-radius:6px;padding:7px 9px;margin-bottom:7px;
     font-size:11.5px;color:#ffe6b0;background:rgba(255,178,0,.08);display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
   .lwarn button{padding:3px 8px;font-size:11px;}
@@ -672,7 +673,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.39.1";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.39.2";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -1565,7 +1566,11 @@ function startLink(){
 function stopLink(){linking=null;document.body.classList.remove("linking");updateLinkBtn();}
 function updateLinkBtn(){
   $("linkBtn").classList.toggle("on",!!linking);
-  $("lkShowBtn").classList.toggle("on",db.lkShow!==false);
+  const b=$("lkShowBtn"),off=db.lkShow===false;
+  b.classList.toggle("on",!off);
+  b.classList.toggle("warnoff",off);            /* 切れている時は、ひと目で分かるように */
+  b.textContent=off?"⌁線オフ":"⌁表示";
+  b.title=off?"いま線を隠している（押すと出る）":"そことそこつながるやん線を出す／隠す";
 }
 /* =========================================================
    🤖 AIに言われて、なるほどと思ったこと
@@ -3016,7 +3021,7 @@ function downloadBlob(blob,name){
   setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 }
 function exportJSON(){
-  const blob=new Blob([JSON.stringify({maps:db.maps,order:db.order,cur:db.cur,roles:db.roles},null,2)],
+  const blob=new Blob([JSON.stringify({maps:db.maps,order:db.order,cur:db.cur,roles:db.roles,lkShow:db.lkShow},null,2)],
     {type:"application/json"});
   downloadBlob(blob,"atozuke-"+new Date().toISOString().slice(0,10)+".json");
 }
