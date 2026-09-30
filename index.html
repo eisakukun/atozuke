@@ -669,7 +669,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.38.4";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.39.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -1188,6 +1188,45 @@ function reconcileMirrors(){                       /* つないだ札の下の�
   while(pass()&&guard++<12)changed=true;            /* 孫・ひ孫まで降りる */
   return changed;
 }
+function twinIn(syncId,mid){                       /* その紙にいる仲間の札 */
+  if(!syncId)return null;
+  const m=db.maps[mid];if(!m)return null;
+  return Object.values(m.nodes).find(x=>x.sync===syncId)||null;
+}
+function mirrorLinks(){
+  /* ルール：同期どうしの札を結んだ線だけ、ほかの紙にも出す。
+     片方が同期していない線は、引いた紙にだけ残す（相手の紙には出しようがないので） */
+  let did=false;
+  db.order.forEach(mid=>{
+    const m=db.maps[mid];if(!m)return;
+    Object.values(m.nodes).forEach(n=>{
+      if(!n.sync||!Array.isArray(n.links)||!n.links.length)return;
+      n.links.forEach(l=>{
+        const t=m.nodes[l.to];if(!t||!t.sync)return;      /* 相手が同期していない＝この紙だけ */
+        twinsOf(n.sync,mid,n.id).forEach(tw=>{
+          const other=twinIn(t.sync,tw.mid);if(!other)return;
+          if(!Array.isArray(tw.n.links))tw.n.links=[];
+          if(tw.n.links.some(x=>x.to===other.id))return;
+          if(Object.values(tw.m.nodes).some(x=>(x.links||[]).some(y=>y.to===tw.n.id&&x.sync===t.sync)))return; /* 逆向きで既にある */
+          tw.n.links.push({to:other.id,label:l.label||""});
+          tw.m.u=Date.now();did=true;
+        });
+      });
+    });
+  });
+  return did;
+}
+function unmirrorLink(aId,bId,mapId){              /* 外した線は、ほかの紙の同じ線も外す */
+  const mid=mapId||db.cur,m=db.maps[mid];if(!m)return;
+  const a=m.nodes[aId],b=m.nodes[bId];
+  if(!a||!b||!a.sync||!b.sync)return;
+  twinsOf(a.sync,mid,aId).forEach(tw=>{
+    const other=twinIn(b.sync,tw.mid);if(!other)return;
+    if(Array.isArray(tw.n.links))tw.n.links=tw.n.links.filter(x=>x.to!==other.id);
+    if(Array.isArray(other.links))other.links=other.links.filter(x=>x.to!==tw.n.id);
+    tw.m.u=Date.now();
+  });
+}
 function delTwinsOf(ids,mapId){                    /* 消した札の相手も消す（その下ごと） */
   const m=db.maps[mapId||db.cur];if(!m)return;
   ids.forEach(id=>{
@@ -1383,7 +1422,7 @@ let mirBusy=false;
 function render(){
   if(!mirBusy){                                    /* 🔗 つないだ札の下の枝を、描く前にそろえる */
     mirBusy=true;
-    try{ if(reconcileMirrors())saveSoon(); }catch(e){}
+    try{ let ch=reconcileMirrors(); if(mirrorLinks())ch=true; if(ch)saveSoon(); }catch(e){}
     mirBusy=false;
   }
   renderToolsIfNeeded();
@@ -1508,9 +1547,9 @@ function toggleLink(a,b,allowCut){
     return;
   }
   snapshot();
-  if(ex){ex.owner.links=ex.owner.links.filter(x=>x!==ex.link);toast("⌁ つながるやん線を外した");}
+  if(ex){ex.owner.links=ex.owner.links.filter(x=>x!==ex.link);unmirrorLink(a,b);toast("⌁ つながるやん線を外した");}
   else{linksOf(state.nodes[a]).push({to:b,label:""});toast("⌁ つながるやん線を引いた");}
-  render();openInsp();
+  render();openInsp();save();
 }
 function startLink(){
   if(ed)commitEd();
