@@ -67,10 +67,6 @@
   .tab .x{opacity:.5;font-size:11px;}
   .tab .x:hover{opacity:1;color:var(--warn);}
   /* ⤵ 下のノート：札の中のバッジ／上の道しるべ／⇧クリックの小窓 */
-  .node .subb{display:inline-flex;align-items:center;gap:4px;margin-left:auto;padding:1px 7px;border-radius:999px;
-    border:1px solid var(--cyan);color:#dff;background:rgba(0,229,255,.12);font-size:9.5px;cursor:pointer;
-    letter-spacing:0;box-shadow:0 0 10px -3px var(--cyan);white-space:nowrap;}
-  .node .subb:hover{background:rgba(0,229,255,.3);color:#fff;}
   /* 🔗 ほかの紙の札と同期している印 */
   .node .mirb{display:inline-flex;align-items:center;gap:3px;margin-left:auto;padding:1px 7px;border-radius:999px;
     border:1px solid #c58cff;color:#eadfff;background:rgba(197,140,255,.14);font-size:9.5px;cursor:pointer;
@@ -86,16 +82,6 @@
   #pairbar.open{display:flex;}
   #pairbar b{color:#fff;font-weight:600;}
   #mirList .calrow .d{min-width:auto;}
-  .node.hassub{box-shadow:4px 4px 0 -1px #0c0c17,5px 5px 0 0 var(--cyan),0 8px 22px rgba(0,0,0,.6);}
-  #crumb{display:none;align-items:center;gap:4px;margin-left:8px;padding-left:10px;border-left:1px solid var(--line);
-    font-size:12px;font-family:var(--mono);white-space:nowrap;flex:none;}
-  #crumb.on{display:flex;}
-  #crumb .cb{padding:4px 9px;border:1px solid var(--cyan);border-radius:4px;color:#bff;cursor:pointer;
-    background:rgba(0,229,255,.08);max-width:180px;overflow:hidden;text-overflow:ellipsis;}
-  #crumb .cb:hover{background:rgba(0,229,255,.25);color:#fff;}
-  #crumb .cb.up{font-weight:700;border-color:var(--gold);color:#fff;background:#1a1206;box-shadow:0 0 12px -4px var(--gold);}
-  #crumb .sep{color:var(--muted);}
-  #crumb .here{color:#fff;padding:4px 4px;max-width:200px;overflow:hidden;text-overflow:ellipsis;}
   #subMenu{position:fixed;z-index:60;display:none;flex-direction:column;gap:5px;padding:9px;min-width:230px;
     background:#0b0b16;border:1px solid var(--cyan);border-radius:6px;box-shadow:0 0 26px -6px var(--cyan),0 10px 30px rgba(0,0,0,.7);}
   #subMenu.open{display:flex;}
@@ -491,7 +477,7 @@
   <input type="file" id="fileInput" hidden accept=".json,.md,.txt">
 </div>
 
-<div id="tabbar"><span id="tabs" style="display:flex;gap:4px"></span><span id="crumb"></span></div>
+<div id="tabbar"><span id="tabs" style="display:flex;gap:4px"></span></div>
 <div id="subMenu"></div>
 <div id="tagbar"><span style="margin-right:4px">TAG</span><span id="tags" style="display:flex;gap:5px"></span></div>
 
@@ -544,7 +530,6 @@
       <button id="chkBtn">☑ チェックの札にする</button>
       <button id="cancelBtn">✕ キャンセルにする</button>
       <button id="startBtn">▶ スタートにする</button>
-      <button id="subBtn">⤵ 下のノート</button>
       <button id="cutBtn">親から切る</button>
       <button id="linkBtn2">⌁ つなぐ</button>
       <button id="delOneBtn">この札を消す</button>
@@ -685,7 +670,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.36.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.37.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -860,38 +845,11 @@ function mapTitle(m){
   const first=rs.sort((a,b)=>(+a.id.slice(1))-(+b.id.slice(1)))[0];
   return (first&&!isPH(first.text))?oneLine(first.text):(m.name||"名前のない紙");
 }
-/* ===== ⤵ 下のノート（札の一段下の紙）=====
-   紙に up={map,node}（どの紙のどの札の下か）、札に sub=紙id。
-   下のノートはタブには並べない＝上の道しるべとバッジから行き来する */
-function upOf(m){return m&&m.up&&db.maps[m.up.map]&&db.maps[m.up.map]!==m?m.up:null;}
-function subOf(n){return n&&n.sub&&db.maps[n.sub]&&upOf(db.maps[n.sub])?db.maps[n.sub]:null;}
-function chainOf(id){                                 /* 一番上の紙 → … → いまの紙 */
-  const out=[id],seen={[id]:1};
-  let m=db.maps[id];
-  while(upOf(m)&&!seen[m.up.map]){seen[m.up.map]=1;out.unshift(m.up.map);m=db.maps[m.up.map];}
-  return out;
-}
-function makeSub(nodeId,go){
-  const n=state.nodes[nodeId];if(!n)return;
-  if(subOf(n)){if(go)goSub(nodeId);return;}
-  const from=db.cur,txt=isPH(n.text)?"":(n.text||"");
-  const id=blankMap(oneLine(txt)||"下のノート");
-  db.order=db.order.filter(x=>x!==id).concat(id);
-  const m=db.maps[id];
-  m.up={map:from,node:nodeId};
-  const first=m.nodes[m.selected];                   /* 最初の札＝この札の続き。▶スタートにする */
-  if(first&&txt){first.text=txt;first.start=true;}
-  n.sub=id;
-  m.u=db.maps[from].u=Date.now();
-  closeSubMenu();
-  if(go){switchTo(id);const fid=m.selected;requestAnimationFrame(()=>focusNode(fid));toast("⤵ 「"+oneLine(txt||"この札").slice(0,20)+"」の下のノートへ。上の道しるべで戻れる");}
-  else{render();toast("⤵ 下のノートを作った（札のバッジから移れる）");}
-}
-function goSub(nodeId){
-  const m=subOf(state.nodes[nodeId]);if(!m)return;
-  closeSubMenu();
-  switchTo(n2id(m));
-}
+/* ⤵ 下のノート（札の一段下の紙）は v1.37.0 でやめた（使っていないため）。
+   古いデータは normalize() でふつうの紙に直す（中身が無いものは消す）。 */
+function upOf(){return null;}
+function subOf(){return null;}
+function chainOf(id){return [id];}
 function n2id(m){return Object.keys(db.maps).find(k=>db.maps[k]===m);}
 function goUpTo(mapId,nodeId){                       /* 上の紙へ戻って、元の札を選んで真ん中に */
   if(!db.maps[mapId])return;
@@ -900,12 +858,9 @@ function goUpTo(mapId,nodeId){                       /* 上の紙へ戻って、
 }
 function openSubMenu(nodeId){
   const n=state.nodes[nodeId],el=nodeEl(nodeId);if(!n||!el)return;
-  const box=$("subMenu"),sub=subOf(n);
-  box.innerHTML='<div class="t">⤵ '+esc(oneLine(isPH(n.text)?"（まだ書いていない札）":n.text))+'</div>'+
-    (sub?'<button class="gold" data-a="go">⤵ 下のノートへ移る（'+Object.keys(sub.nodes).length+'枚）<kbd>⏎</kbd></button>'
-        :'<button class="gold" data-a="makego">⤵ 下のノートを作って移る<kbd>⏎</kbd></button>'+
-         '<button data-a="make">＋ 作るだけ（ここに残る）<kbd>⇧⏎</kbd></button>')+
-    '<button data-a="mir">'+(n.sync?"🔗 ほかの紙とのつなぎを外す":"🔗 ほかの紙の札とつなぐ")+'</button>'+
+  const box=$("subMenu");
+  box.innerHTML='<div class="t">'+esc(oneLine(isPH(n.text)?"（まだ書いていない札）":n.text))+'</div>'+
+    '<button class="gold" data-a="mir">'+(n.sync?"🔗 ほかの紙とのつなぎを外す":"🔗 ほかの紙の札とつなぐ")+'<kbd>⏎</kbd></button>'+
     '<button data-a="x">やめる<kbd>esc</kbd></button>';
   box._node=nodeId;box._kind="sub";
   const r=el.getBoundingClientRect();
@@ -945,29 +900,10 @@ function emptyAct(k){
 function subAct(a){
   const id=$("subMenu")._node;
   closeSubMenu();
-  if(a==="go")goSub(id);
-  else if(a==="makego")makeSub(id,true);
-  else if(a==="make")makeSub(id,false);
-  else if(a==="mir"){select(id);openMirPicker();}     /* 右クリックの小窓からも 🔗 を出せるように */
+  if(a==="mir"){select(id);openMirPicker();}
 }
 function closeSubMenu(){$("subMenu").classList.remove("open");}
-function renderCrumb(){
-  const c=$("crumb"),ch=chainOf(db.cur);
-  let html="";
-  if(ch.length>1){
-    html='<span class="sep">⤴</span>';
-    for(let i=0;i<ch.length-1;i++){
-      const m=db.maps[ch[i]],below=db.maps[ch[i+1]].up,n=m.nodes[below.node];
-      const nm=oneLine(mapTitle(m)),nn=n&&!isPH(n.text)?oneLine(n.text):"";
-      html+='<span class="cb'+(i===ch.length-2?" up":"")+'" data-m="'+ch[i]+'" data-n="'+esc(below.node)+'" title="'+
-        esc(nm+(nn?" › "+nn:""))+'">'+(i===ch.length-2?"⤴ ":"")+esc(nn||nm)+'</span><span class="sep">›</span>';
-    }
-    html+='<span class="here">'+esc(oneLine(mapTitle(state)))+'</span>';
-  }
-  if(c._h===html)return;
-  c._h=html;c.innerHTML=html;c.classList.toggle("on",!!html);
-  c.querySelectorAll(".cb").forEach(el=>el.onclick=()=>goUpTo(el.dataset.m,el.dataset.n));
-}
+function renderCrumb(){}
 let tabEditing=null;                          /* 名前を書き換え中の紙id（描き直しで消さないため） */
 function autoTitle(m){                        /* 名前を付けなかった時に出る名前 */
   const t=m.title;delete m.title;const v=mapTitle(m);if(t!==undefined)m.title=t;return v;
@@ -1281,7 +1217,7 @@ function openMirPicker(){
   const rows=db.order.filter(mid=>mid!==db.cur&&db.maps[mid]).map(mid=>{
     const m=db.maps[mid],cnt=Object.values(m.nodes).filter(x=>!isJunk(x.text)).length;
     return '<div class="calrow" data-m="'+mid+'"><span class="t">'+esc(mapTitle(m))+
-      (upOf(m)?'<span class="c">（下のノート）</span>':"")+'</span><span class="c">'+cnt+'枚</span></div>';
+'</span><span class="c">'+cnt+'枚</span></div>';
   }).join("");
   $("mirList").innerHTML=rows||'<div class="subtle">ほかに紙がない。＋新規で紙を作ってから。</div>';
   $("mirList").querySelectorAll(".calrow").forEach(el=>el.onclick=()=>{
@@ -1460,8 +1396,6 @@ function render(){
     el.classList.toggle("plain",!r);
     el.classList.toggle("start",sid.has(id));
     el.style.setProperty("--st",sid.has(id)?startColor(n):"");
-    const sub=subOf(n);
-    el.classList.toggle("hassub",!!sub);
     el.classList.toggle("mir",!!n.sync);
     el.classList.toggle("selected",state.selected===id);
     el.classList.toggle("dim",!!keep&&!keep.has(id));
@@ -1481,7 +1415,6 @@ function render(){
       chkCount(id)+                                  /* 下にチェックの札があれば、済み数はどの札にも出す */
       (sid.has(id)?'<span class="stb">▶ START</span>':"")+
       (r?(esc(r.icon)+" "+esc(r.name)):((sid.has(id)||n.chk!==undefined||chkCount(id))?"":"—"))+
-      (sub?'<span class="subb" title="下のノートへ移る">⤵ 下のノート '+Object.keys(sub.nodes).length+'枚</span>':"")+
       (n.sync?'<span class="mirb" title="つないだ相手の紙へ移る">🔗 '+
         esc(mapTitle((twinsOf(n.sync,db.cur,id)[0]||{}).m||state).slice(0,8))+'</span>':"");
     const txt=el.querySelector(".txt");
@@ -2035,9 +1968,6 @@ function wireNode(el){
     if(e.target.closest(".mirb")){                   /* 🔗 バッジ＝つないだ相手の紙へ */
       e.stopPropagation();e.preventDefault();goToTwin(el.dataset.id);return;
     }
-    if(e.target.closest(".subb")&&!linking){         /* ⤵ バッジ＝そのまま下のノートへ */
-      e.stopPropagation();e.preventDefault();goSub(el.dataset.id);return;
-    }
     if((e.metaKey||e.ctrlKey)&&!linking&&state.nodes[el.dataset.id]){
       e.stopPropagation();e.preventDefault();
       if(selFrame){                                  /* 枠を選んでいる時＝その枠に入れる／外す */
@@ -2055,13 +1985,6 @@ function wireNode(el){
         return;
       }
       if(!from)toast("⇧でつなぐには、先につなぎ元の札をふつうにクリックして選んで");
-    }
-    if(e.altKey&&!e.shiftKey&&!linking&&e.button===0&&state.nodes[el.dataset.id]){
-      e.stopPropagation();e.preventDefault();         /* ⌥クリック＝下のノートへ（無ければ作るか聞く） */
-      if(ed)commitEd();
-      if(subOf(state.nodes[el.dataset.id]))goSub(el.dataset.id);
-      else{select(el.dataset.id);openSubMenu(el.dataset.id);}
-      return;
     }
     if(linking&&state.nodes[el.dataset.id]){       /* ⌁ つなぎ待ち：札のどこを押してもここでつなぐ */
       e.stopPropagation();e.preventDefault();
@@ -3092,8 +3015,6 @@ function outlineOf(m,ok){
       if(!show){kidsIn(m,id).sort((a,b)=>numOf(a.id)-numOf(b.id)).forEach(k=>walk(k.id,d));return;}
       out.push("  ".repeat(d)+"- "+lineOf(m,nd));
       if(nd.memo)out.push("  ".repeat(d+1)+"- メモ： "+oneLine(nd.memo));
-      if(nd.sub&&db.maps[nd.sub]&&mapHasBody(db.maps[nd.sub]))
-        out.push("  ".repeat(d+1)+"- （この札の下にノートあり → 「"+mapTitle(db.maps[nd.sub])+"」の紙）");
       kidsIn(m,id).sort((a,b)=>numOf(a.id)-numOf(b.id)).forEach(k=>walk(k.id,d+1));
     })(root.id,0);
   });
@@ -3101,10 +3022,7 @@ function outlineOf(m,ok){
 }
 let aiPick=new Set(), aiBlock=new Set(), aiBlockTouched=new Set(), aiFrame=new Set();                          /* AIに渡す紙（上の紙のid）。開くたび「今の紙」で入れ直す */
 function topMaps(){return db.order.filter(id=>db.maps[id]&&!upOf(db.maps[id]));}
-function subsUnder(id,out){                    /* その紙にぶら下がる「⤵下のノート」も一緒に渡す */
-  db.order.forEach(k=>{const m=db.maps[k];
-    if(m&&m.up&&m.up.map===id&&!out.has(k)){out.add(k);subsUnder(k,out);}});
-}
+function subsUnder(){}
 function aiPicked(){
   const out=new Set();
   aiPick.forEach(id=>{if(db.maps[id]){out.add(id);subsUnder(id,out);}});
@@ -3295,7 +3213,7 @@ function buildMarkdown(){
 
   L.push("---","","## 1. 図そのもの（書いたままのつながり）","");
   maps.forEach(m=>{
-    const up=m.up&&db.maps[m.up.map];
+    const up=null;
     L.push("### "+(maps.length>1&&mi.get(m)>0?"紙"+(mi.get(m)+1)+"：":"")+mapTitle(m)+
       (up?"（"+mdTag(up,m.up.node)+" の札の下のノート）":""),"");
     L.push(outlineOf(m,id=>ok(m,id))||"（空）","");
@@ -3777,7 +3695,6 @@ $("calClose").onclick=closeModals;
 $("clearBtn").onclick=clearAll;
 $("delOneBtn").onclick=delNode;
 $("cutBtn").onclick=cutParent;
-$("subBtn").onclick=()=>{if(state.selected)openSubMenu(state.selected);};
 $("startBtn").onclick=()=>{if(state.selected)setStart(state.selected);};
 $("chkBtn").onclick=()=>{if(state.selected)toggleChkCard(state.selected);};
 $("mirBtn").onclick=openMirPicker;
@@ -3859,6 +3776,15 @@ window.addEventListener("resize",()=>{drawLinks(visibleSet());placeEdbar();});
 function normalize(){
   if(!db.tomb||typeof db.tomb!=="object")db.tomb={};
   if(!db.roleTomb||typeof db.roleTomb!=="object")db.roleTomb={};
+  /* v1.37.0：⤵下のノートをやめた。ぶら下がっていた紙はふつうの紙に直し、中身が無いものは消す */
+  Object.keys(db.maps).forEach(id=>{
+    const m=db.maps[id];if(!m||!m.up)return;
+    delete m.up;
+    const body=Object.values(m.nodes||{}).filter(n=>n.text&&n.text!==PH&&n.text!==SEED_TEXT);
+    if(!body.length){delete db.maps[id];db.tomb[id]=Date.now();}
+  });
+  Object.values(db.maps).forEach(m=>Object.values(m.nodes||{}).forEach(n=>{if(n.sub)delete n.sub;}));
+
   if(typeof db.metaU!=="number")db.metaU=0;
   Object.values(db.maps||{}).forEach(m=>{ if(typeof m.u!=="number")m.u=0; });
   if(!Array.isArray(db.roles)||!db.roles.length)db.roles=SEED_ROLES.map(r=>({...r}));
