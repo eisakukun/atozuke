@@ -670,7 +670,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.37.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.38.1";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -860,7 +860,7 @@ function openSubMenu(nodeId){
   const n=state.nodes[nodeId],el=nodeEl(nodeId);if(!n||!el)return;
   const box=$("subMenu");
   box.innerHTML='<div class="t">'+esc(oneLine(isPH(n.text)?"（まだ書いていない札）":n.text))+'</div>'+
-    '<button class="gold" data-a="mir">'+(n.sync?"🔗 ほかの紙とのつなぎを外す":"🔗 ほかの紙の札とつなぐ")+'<kbd>⏎</kbd></button>'+
+    '<button class="gold" data-a="mir">'+(n.sync?"🔗 つなぎを見る・もう1枚足す":"🔗 ほかの紙の札とつなぐ")+'<kbd>⏎</kbd></button>'+
     '<button data-a="x">やめる<kbd>esc</kbd></button>';
   box._node=nodeId;box._kind="sub";
   const r=el.getBoundingClientRect();
@@ -1175,8 +1175,10 @@ function reconcileMirrors(){                       /* つないだ札の下の�
           const mine=kidsIn2(m,n.id), theirs=kidsIn2(t.m,t.n.id);
           const have=new Set(theirs.map(k=>k.sync).filter(Boolean));
           mine.forEach(k=>{
-            if(k.sync&&have.has(k.sync))return;     /* 向こうにもうある */
-            if(k.sync&&twinsOf(k.sync,mid,k.id).length)return;  /* 別の場所で見つかる＝触らない */
+            if(k.sync&&have.has(k.sync))return;     /* その紙の同じ親の下に、もうある */
+            /* その紙のどこかに同じ仲間がいる時だけ作らない（親から切った札などを二重にしない）。
+               3枚目・4枚目の紙には、ちゃんと降ろす */
+            if(k.sync&&twinsOf(k.sync).some(x=>x.mid===t.mid))return;
             makeTwinChild(m,k,n,t.m,t.n);did=true;
           });
         });
@@ -1205,25 +1207,39 @@ function openMirPicker(){
   const id=state.selected;
   if(!id||!state.nodes[id]){toast("先に、つなぎたい札を選んで");return;}
   const n=state.nodes[id];
-  if(n.sync){                                      /* すでにつないである＝外す */
-    const tw=twinsOf(n.sync,db.cur,id);
-    if(!confirm("この札のつなぎを外します（"+tw.length+"枚とのつながり）。文はそのまま残ります。"))return;
-    snapshot();
-    const sid=n.sync;delete n.sync;
-    if(tw.length===1)delete tw[0].n.sync;          /* 相手が1枚だけなら、あちらの印も外す */
-    render();openInsp();save();toast("🔗 つなぎを外した");
-    return;
+  const tw=n.sync?twinsOf(n.sync,db.cur,id):[];
+  const joined=new Set(tw.map(t=>t.mid));
+  let head="";
+  if(tw.length){                                   /* すでにつないである＝相手の一覧＋外すボタン */
+    head='<div class="cap" style="margin-top:4px">いまつながっている紙（'+tw.length+'枚）</div>'+
+      tw.map(t=>'<div class="calrow" data-go="'+t.mid+'" data-node="'+t.n.id+'">'+
+        '<span class="d">🔗</span><span class="t">'+esc(mapTitle(t.m))+'</span>'+
+        '<span class="c">押すと移る</span></div>').join("")+
+      '<div style="margin:10px 0 4px"><button id="mirOff">🔗 つなぎを外す</button></div>'+
+      '<div class="cap">さらにつなぐ紙をえらぶ</div>';
   }
-  const rows=db.order.filter(mid=>mid!==db.cur&&db.maps[mid]).map(mid=>{
+  const rows=db.order.filter(mid=>mid!==db.cur&&db.maps[mid]&&!joined.has(mid)).map(mid=>{
     const m=db.maps[mid],cnt=Object.values(m.nodes).filter(x=>!isJunk(x.text)).length;
     return '<div class="calrow" data-m="'+mid+'"><span class="t">'+esc(mapTitle(m))+
 '</span><span class="c">'+cnt+'枚</span></div>';
   }).join("");
-  $("mirList").innerHTML=rows||'<div class="subtle">ほかに紙がない。＋新規で紙を作ってから。</div>';
-  $("mirList").querySelectorAll(".calrow").forEach(el=>el.onclick=()=>{
+  $("mirList").innerHTML=head+(rows||'<div class="subtle">ほかにつなげる紙がない。＋新規で紙を作ってから。</div>');
+  $("mirList").querySelectorAll(".calrow[data-m]").forEach(el=>el.onclick=()=>{
     closeModals();
     startPair(db.cur,id,el.dataset.m);
   });
+  $("mirList").querySelectorAll(".calrow[data-go]").forEach(el=>el.onclick=()=>{
+    closeModals();switchTo(el.dataset.go);
+    if(state.nodes[el.dataset.node]){select(el.dataset.node);requestAnimationFrame(()=>focusNode(el.dataset.node));}
+  });
+  const off=$("mirOff");
+  if(off)off.onclick=()=>{
+    if(!confirm("この札のつなぎを外します（"+tw.length+"枚とのつながり）。文はそのまま残ります。"))return;
+    snapshot();
+    delete n.sync;
+    if(tw.length===1)delete tw[0].n.sync;          /* 相手が1枚だけなら、あちらの印も外す */
+    closeModals();render();openInsp();save();toast("🔗 つなぎを外した");
+  };
   openModal("mir");
 }
 function startPair(fromMap,fromNode,toMap){
@@ -1415,8 +1431,9 @@ function render(){
       chkCount(id)+                                  /* 下にチェックの札があれば、済み数はどの札にも出す */
       (sid.has(id)?'<span class="stb">▶ START</span>':"")+
       (r?(esc(r.icon)+" "+esc(r.name)):((sid.has(id)||n.chk!==undefined||chkCount(id))?"":"—"))+
-      (n.sync?'<span class="mirb" title="つないだ相手の紙へ移る">🔗 '+
-        esc(mapTitle((twinsOf(n.sync,db.cur,id)[0]||{}).m||state).slice(0,8))+'</span>':"");
+      (n.sync?(()=>{const tw=twinsOf(n.sync,db.cur,id);
+        return '<span class="mirb" title="つないだ相手の紙へ移る（'+tw.length+'枚）">🔗 '+
+          esc(mapTitle((tw[0]||{}).m||state).slice(0,8))+(tw.length>1?" +"+(tw.length-1):"")+'</span>';})():"");
     const txt=el.querySelector(".txt");
     if(!txt.hasAttribute("contenteditable")){
       txt.textContent=(n.text&&n.text.trim())?n.text:PH;
@@ -2583,7 +2600,7 @@ function openInsp(){
   mi.value=n.memo||"";
   mi.oninput=()=>{state.nodes[state.selected].memo=mi.value;spreadSync(state.selected);render();};
   const mb=$("mirBtn"),tw=n.sync?twinsOf(n.sync,db.cur,n.id):[];
-  mb.textContent=n.sync?("🔗 つなぎを外す（"+tw.length+"枚）"):"🔗 ほかの紙とつなぐ";
+  mb.textContent=n.sync?("🔗 つなぎ（"+tw.length+"枚）を見る・足す"):"🔗 ほかの紙とつなぐ";
   const cb=$("chkBtn");
   cb.textContent=(n.chk===undefined)?"☑ チェックの札にする":
     "☑ チェックを外す（今 "+(n.chk===1?"済み":"まだ")+"）";
