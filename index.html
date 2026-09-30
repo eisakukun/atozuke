@@ -127,6 +127,9 @@
   body.linking #world .node,body.shiftlink #world .node{cursor:crosshair}
   body.linking #world .node:hover,body.shiftlink #world .node:hover{box-shadow:0 0 0 2px #ff2e97,0 0 22px -4px #ff2e97}
   svg#links .vwt{font-size:12px;font-family:var(--mono);paint-order:stroke;stroke:#08080f;stroke-width:4px;}
+  .lwarn{border:1px solid var(--gold);border-radius:6px;padding:7px 9px;margin-bottom:7px;
+    font-size:11.5px;color:#ffe6b0;background:rgba(255,178,0,.08);display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .lwarn button{padding:3px 8px;font-size:11px;}
   #roleDump{margin-top:9px}
   #roleDump .dh{display:flex;align-items:center;gap:6px;font-size:11px;font-family:var(--mono);
     padding:5px 7px;border-radius:4px 4px 0 0;border:1px solid var(--line);border-bottom:none;background:#0b0b16}
@@ -669,7 +672,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.39.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.39.1";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -2728,12 +2731,18 @@ function renderLinkBox(){
   });
   sec.style.display=linkRows.length?"":"none";
   if(!linkRows.length)return;
-  $("linkBox").innerHTML=linkRows.map((r,i)=>{
+  const hidden=db.lkShow===false;                 /* 線を隠している時は、ここで教える（一覧だけ出て線が無い状態） */
+  $("linkBox").innerHTML=(hidden?
+    '<div class="lwarn">いま <b>⌁表示</b> が切ってあるので、線は画面に出ていません。'+
+    '<button id="lkOnBtn">線を出す</button></div>':"")+
+    linkRows.map((r,i)=>{
     const t=state.nodes[r.other], nm=isPH(t.text)?"（未記入）":oneLine(t.text);
     return '<div class="lrow" data-i="'+i+'"><span class="lnm" title="'+esc(nm)+'">⌁ '+esc(nm)+'</span>'+
       '<input type="text" class="llb" placeholder="ひとこと（例：これが効く）" value="'+esc(r.link.label||"")+'">'+
       '<button class="lgo" title="その札へ飛ぶ">→</button><button class="lx" title="外す">✕</button></div>';
   }).join("");
+  const on=$("lkOnBtn");
+  if(on)on.onclick=()=>{db.lkShow=true;updateLinkBtn();render();openInsp();save();toast("⌁ 線を出した");};
   $("linkBox").querySelectorAll(".lrow").forEach(row=>{
     const r=linkRows[+row.dataset.i];
     row.querySelector(".llb").oninput=e=>{r.link.label=e.target.value;drawLinks(visibleSet());saveSoon();};
