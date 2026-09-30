@@ -670,7 +670,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.38.1";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.38.3";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -1431,7 +1431,8 @@ function render(){
       chkCount(id)+                                  /* 下にチェックの札があれば、済み数はどの札にも出す */
       (sid.has(id)?'<span class="stb">▶ START</span>':"")+
       (r?(esc(r.icon)+" "+esc(r.name)):((sid.has(id)||n.chk!==undefined||chkCount(id))?"":"—"))+
-      (n.sync?(()=>{const tw=twinsOf(n.sync,db.cur,id);
+      (n.sync&&!(n.parent&&state.nodes[n.parent]&&state.nodes[n.parent].sync)?(()=>{
+        const tw=twinsOf(n.sync,db.cur,id);      /* 🔗の行き先は、つなぎ始めた札にだけ出す（下の枝には出さない） */
         return '<span class="mirb" title="つないだ相手の紙へ移る（'+tw.length+'枚）">🔗 '+
           esc(mapTitle((tw[0]||{}).m||state).slice(0,8))+(tw.length>1?" +"+(tw.length-1):"")+'</span>';})():"");
     const txt=el.querySelector(".txt");
