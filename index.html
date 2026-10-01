@@ -128,6 +128,11 @@
   body.linking #world .node:hover,body.shiftlink #world .node:hover{box-shadow:0 0 0 2px #ff2e97,0 0 22px -4px #ff2e97}
   svg#links .vwt{font-size:12px;font-family:var(--mono);paint-order:stroke;stroke:#08080f;stroke-width:4px;}
   #lkShowBtn.warnoff{color:var(--warn);border-color:var(--warn);background:#1b0a10;}
+  #vscope{display:none;margin-top:6px;}
+  #vscope.on{display:flex;gap:7px;align-items:center;flex-wrap:wrap;font-size:11.5px;
+    border:1px solid #7cff9b;border-radius:6px;padding:6px 8px;background:rgba(124,255,155,.08);color:#dff5e4;}
+  #vscope b{color:#fff;font-weight:600;}
+  #vscope button{padding:3px 8px;font-size:11px;}
   .lwarn{border:1px solid var(--gold);border-radius:6px;padding:7px 9px;margin-bottom:7px;
     font-size:11.5px;color:#ffe6b0;background:rgba(255,178,0,.08);display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
   .lwarn button{padding:3px 8px;font-size:11px;}
@@ -502,6 +507,7 @@
       <button id="viewAdd" class="primary" style="flex:none">書く</button>
     </div>
     <div class="subtle" style="margin-top:3px;font-size:10px">⏎＝改行　／　⇧⏎＝書く</div>
+    <div id="vscope"></div>
     <div id="viewList"></div>
   </section>
   <section id="frameSec" style="display:none">
@@ -673,7 +679,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.39.2";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.40.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -835,6 +841,7 @@ function blankMap(name){
 }
 function switchTo(id){
   if(!db.maps[id])return;
+  if(viewScope){viewScope=null;const b=$("vscope");if(b){b.className="";b.innerHTML="";}}
   if(ed)endEdit();
   db.cur=id; state=db.maps[id];
   activeTags.clear(); query=""; $("search").value="";
@@ -863,6 +870,7 @@ function openSubMenu(nodeId){
   const n=state.nodes[nodeId],el=nodeEl(nodeId);if(!n||!el)return;
   const box=$("subMenu");
   box.innerHTML='<div class="t">'+esc(oneLine(isPH(n.text)?"（まだ書いていない札）":n.text))+'</div>'+
+    '<button data-a="vscope">🔭 この札から下を俯瞰する</button>'+
     '<button class="gold" data-a="mir">'+(n.sync?"🔗 つなぎを見る・もう1枚足す":"🔗 ほかの紙の札とつなぐ")+'<kbd>⏎</kbd></button>'+
     '<button data-a="x">やめる<kbd>esc</kbd></button>';
   box._node=nodeId;box._kind="sub";
@@ -904,6 +912,7 @@ function subAct(a){
   const id=$("subMenu")._node;
   closeSubMenu();
   if(a==="mir"){select(id);openMirPicker();}
+  else if(a==="vscope"){select(id);setViewScope(id);}
 }
 function closeSubMenu(){$("subMenu").classList.remove("open");}
 function renderCrumb(){}
@@ -1840,20 +1849,52 @@ function heldIds(){                             /* もうどれかの俯瞰が�
   viewsOf().forEach(v=>(v.ids||[]).forEach(id=>h.add(id)));
   return h;
 }
-function freshIds(){                            /* まだどこにも入っていない＝次の俯瞰の受け持ち */
+function freshIds(){                            /* ①全体の俯瞰：まだどこにも入っていない札 */
   const h=heldIds();
   return Object.keys(state.nodes).filter(id=>!h.has(id)&&!isPH(state.nodes[id].text));
+}
+let viewScope=null;                             /* ②この札から下の俯瞰：{node:id} */
+function scopeIds(id){                          /* その札と、ぶら下がっている子ぜんぶ（未記入は除く） */
+  return [...subtree(id)].filter(k=>state.nodes[k]&&!isPH(state.nodes[k].text));
+}
+function targetIds(){                           /* いまの受け持ち */
+  return (viewScope&&state.nodes[viewScope.node])?scopeIds(viewScope.node):freshIds();
+}
+function setViewScope(id){
+  if(ed)commitEd();
+  viewScope=(id&&state.nodes[id])?{node:id}:null;
+  renderViewScope();
+  if(viewScope){
+    const inp=$("viewInput");
+    insp.classList.add("open");
+    inp.focus();
+    toast("🔭 この札から下 "+scopeIds(id).length+" 枚を見て、ひとこと書く（⇧⏎）");
+  }
+  drawLinks(visibleSet());paintViewMarks();
+}
+function renderViewScope(){
+  const box=$("vscope");
+  if(!viewScope||!state.nodes[viewScope.node]){box.className="";box.innerHTML="";return;}
+  const n=state.nodes[viewScope.node];
+  box.className="on";
+  box.innerHTML='▼ <b>'+esc(oneLine(n.text).slice(0,18))+'</b> から下の '+scopeIds(n.id).length+
+    ' 枚だけを俯瞰する<span style="flex:1"></span><button id="vscopeOff">全体に戻す</button>';
+  $("vscopeOff").onclick=()=>setViewScope(null);
 }
 function addView(){
   const inp=$("viewInput"), t=inp.value.trim();
   if(!t){inp.focus();return;}
-  const ids=freshIds();
-  if(!ids.length){toast("🔭 前の俯瞰のあと、まだ新しい札がない");return;}
+  const scoped=viewScope&&state.nodes[viewScope.node];
+  const ids=targetIds();
+  if(!ids.length){toast(scoped?"🔭 この札から下に、書いた札がない":"🔭 前の俯瞰のあと、まだ新しい札がない");return;}
   snapshot();
-  viewsOf().unshift({id:"v"+Date.now().toString(36),text:t,ids:ids,color:nextViewColor(),at:Date.now()});
+  viewsOf().unshift({id:"v"+Date.now().toString(36),text:t,ids:ids,color:nextViewColor(),at:Date.now(),
+    root:scoped?viewScope.node:null});
   inp.value="";autoGrow(inp);
+  const was=scoped?oneLine(state.nodes[viewScope.node].text).slice(0,14):"";
+  viewScope=null;renderViewScope();
   renderViews();save();
-  toast("🔭 いま書いた "+ids.length+" 枚を受け持った");
+  toast(scoped?("🔭 「"+was+"」から下の "+ids.length+" 枚を受け持った"):("🔭 いま書いた "+ids.length+" 枚を受け持った"));
 }
 function viewRect(ids){                         /* 受け持ちを囲む枠 */
   const ns=(ids||[]).map(id=>state.nodes[id]).filter(Boolean);
@@ -1865,8 +1906,9 @@ function viewRect(ids){                         /* 受け持ちを囲む枠 */
   return {x:l-P,y:t-P,w:(r-l)+P*2,h:(b-t)+P*2};
 }
 function showingView(){                         /* いま枠を出すべきもの */
-  if(previewView)return {text:$("viewInput").value.trim()||"（いま書いているぶん）",
-                         ids:freshIds(),color:nextViewColor()};
+  if(previewView||viewScope)return {text:$("viewInput").value.trim()||
+      (viewScope?"（この札から下）":"（いま書いているぶん）"),
+      ids:targetIds(),color:nextViewColor()};
   return hoverView||pinView||null;
 }
 function paintFrameMarks(){
@@ -1915,7 +1957,8 @@ function renderViews(){
   list.innerHTML=vs.map((v,i)=>
     '<div class="vrow" data-i="'+i+'"><span class="vdot" style="color:'+v.color+'"></span>'+
     '<textarea class="vtx" rows="1">'+esc(v.text)+'</textarea>'+
-    '<span class="vn">'+(v.ids||[]).filter(id=>state.nodes[id]).length+'枚</span>'+
+    '<span class="vn">'+(v.ids||[]).filter(id=>state.nodes[id]).length+'枚'+
+      (v.root&&state.nodes[v.root]?'<br>▼'+esc(oneLine(state.nodes[v.root].text).slice(0,8)):"")+'</span>'+
     '<button class="vx" title="この俯瞰を消す">✕</button></div>').join("")
     ||'<div class="subtle" style="margin-top:6px">まだ1本もない。いま書いたぶんを見て、ひとこと書くと1本目ができる。</div>';
   list.querySelectorAll(".vrow").forEach(row=>{
