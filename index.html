@@ -142,6 +142,7 @@
   .lwarn{border:1px solid var(--gold);border-radius:6px;padding:7px 9px;margin-bottom:7px;
     font-size:11.5px;color:#ffe6b0;background:rgba(255,178,0,.08);display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
   .lwarn button{padding:3px 8px;font-size:11px;}
+  .frow .fnt{flex-basis:100%;width:100%;margin-top:5px;font-size:12px;resize:none;overflow:hidden;}
   #roleDump{margin-top:9px}
   #roleDump .dh{display:flex;align-items:center;gap:6px;font-size:11px;font-family:var(--mono);
     padding:5px 7px;border-radius:4px 4px 0 0;border:1px solid var(--line);border-bottom:none;background:#0b0b16}
@@ -219,6 +220,10 @@
   .frame .fb{left:0;right:0;bottom:-7px;height:15px}
   .frame .fl{top:0;bottom:0;left:-7px;width:15px}
   .frame .fr{top:0;bottom:0;right:-7px;width:15px}
+  /* 枠のすぐ外（下）に出す説明。読むためのものなので触れない */
+  .frame .fnote{position:absolute;left:0;top:100%;margin-top:9px;max-width:100%;
+    font-size:12.5px;line-height:1.55;color:var(--fc,#9fb0d8);opacity:.92;pointer-events:none;
+    white-space:pre-wrap;text-shadow:0 0 10px rgba(0,0,0,.9),0 1px 0 #05050a;}
   .frame .ftag{position:absolute;left:10px;top:-14px;pointer-events:auto;cursor:grab;
     background:#08080f;border:1px solid var(--fc,#6f7bd6);color:var(--fc,#6f7bd6);
     padding:1px 10px;border-radius:5px;font-size:11px;font-family:var(--mono);white-space:nowrap;
@@ -692,7 +697,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.41.2";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.42.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -1787,7 +1792,8 @@ function renderFrames(){
     return '<div class="frame'+(selFrame===f.id?" sel":"")+'" data-id="'+f.id+'" style="left:'+b.x+'px;top:'+b.y+'px;width:'+b.w+
       'px;height:'+b.h+'px;--fc:'+f.color+';background:'+tint(f.color,.06)+'">'+
       '<div class="fe ft"></div><div class="fe fb"></div><div class="fe fl"></div><div class="fe fr"></div>'+
-      '<div class="ftag">'+(f.mode==="grow"?"🌱":"▢")+' '+esc(f.name||"枠")+'</div></div>';
+      '<div class="ftag">'+(f.mode==="grow"?"🌱":"▢")+' '+esc(f.name||"枠")+'</div>'+
+      (f.note?'<div class="fnote">'+esc(f.note).replace(/\n/g,"<br>")+'</div>':"")+'</div>';
   }).join("");
   host.querySelectorAll(".frame").forEach(wireFrame);
 }
@@ -1841,11 +1847,18 @@ function renderFrameList(){
     '<span class="fn">'+(f.ids||[]).filter(id=>state.nodes[id]).length+'枚</span>'+
     '<span class="fsw">'+FRAME_PALETTE.map(c=>'<i data-c="'+c+'" class="'+(c===f.color?"on":"")+
       '" style="background:'+c+'"></i>').join("")+'</span>'+
-    '<button class="fx" title="枠を外す">✕</button></div>').join("");
+    '<button class="fx" title="枠を外す">✕</button>'+
+    '<textarea class="fnt" rows="1" placeholder="この枠の説明（枠の外に出る）">'+esc(f.note||"")+'</textarea>'+
+    '</div>').join("");
   box.querySelectorAll(".frow").forEach(row=>{
     const f=fs[+row.dataset.i];
     const nm=row.querySelector(".fnm");
     nm.oninput=()=>{f.name=nm.value;renderFrames();saveSoon();};
+    const nt=row.querySelector(".fnt");
+    if(nt){
+      autoGrow(nt);
+      nt.oninput=()=>{f.note=nt.value;autoGrow(nt);renderFrames();saveSoon();};
+    }
     row.querySelectorAll(".fsw i").forEach(sw=>sw.onclick=()=>{
       f.color=sw.dataset.c;renderFrames();renderFrameList();save();
     });
@@ -3441,7 +3454,8 @@ function buildMarkdown(){
     const ns=(f.ids||[]).map(id=>m.nodes[id]).filter(Boolean).filter(n=>!isJunk(n.text)&&ok(m,n.id))
       .sort((a,b)=>numOf(a.id)-numOf(b.id));
     if(!ns.length)return;
-    frs.push("- **「"+oneLine(f.name||"枠")+"」**（"+ns.length+"枚）： "+ns.map(n=>mdTag(m,n.id)+" "+oneLine(n.text).slice(0,18)).join(" ／ "));
+    frs.push("- **「"+oneLine(f.name||"枠")+"」**（"+ns.length+"枚）"+
+      (f.note?"　…… "+oneLine(f.note):"")+"： "+ns.map(n=>mdTag(m,n.id)+" "+oneLine(n.text).slice(0,18)).join(" ／ "));
   }));
   if(frs.length){
     L.push("### ▢ 本人が「この一帯はひとまとまり」と囲んだ枠","");
