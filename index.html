@@ -79,6 +79,12 @@
     background:rgba(16,8,26,.96);border:1px solid #c58cff;box-shadow:0 0 30px -8px #c58cff;
     font-size:12px;color:#eadfff;font-family:var(--mono);max-width:92vw;}
   #pairbar.open{display:flex;}
+  #vsbar{position:fixed;left:50%;transform:translateX(-50%);top:calc(56px + var(--sat));z-index:40;
+    display:none;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;
+    background:rgba(8,20,12,.96);border:1px solid #7cff9b;box-shadow:0 0 30px -8px #7cff9b;
+    font-size:12px;color:#dff5e4;font-family:var(--mono);max-width:92vw;}
+  #vsbar.open{display:flex;}
+  #vsbar b{color:#fff;font-weight:600;}
   #pairbar b{color:#fff;font-weight:600;}
   #mirList .calrow .d{min-width:auto;}
   #subMenu{position:fixed;z-index:60;display:none;flex-direction:column;gap:5px;padding:9px;min-width:230px;
@@ -647,6 +653,7 @@
   <div id="syState" class="subtle" style="margin-top:12px"></div>
 </div>
 <div id="pairbar"><span id="pairtx"></span><button id="pairStop">やめる</button></div>
+<div id="vsbar"><span id="vstx"></span><button id="vsStop">やめる（esc）</button></div>
 
 <div class="modal" id="mir" style="border-color:#c58cff;box-shadow:0 0 60px -14px #c58cff">
   <h2 style="color:#c58cff">🔗 ほかの紙の札とつなぐ
@@ -679,7 +686,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.40.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.40.1";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -776,7 +783,10 @@ function restore(s){const o=JSON.parse(s);
   if(o.notes)state.notes=o.notes;
   if(o.tools)state.tools=o.tools;
   selFrame=null;
-  render();openInsp();save();}
+  hoverView=pinView=null;viewScope=null;
+  render();openInsp();
+  renderViews();renderViewScope();drawLinks(visibleSet());paintViewMarks();
+  save();}
 function snapshot(){undoStack.push(capture());if(undoStack.length>80)undoStack.shift();
   redoStack.length=0;updateHistBtns();}
 function undo(){if(!undoStack.length)return;redoStack.push(capture());restore(undoStack.pop());updateHistBtns();}
@@ -870,7 +880,8 @@ function openSubMenu(nodeId){
   const n=state.nodes[nodeId],el=nodeEl(nodeId);if(!n||!el)return;
   const box=$("subMenu");
   box.innerHTML='<div class="t">'+esc(oneLine(isPH(n.text)?"（まだ書いていない札）":n.text))+'</div>'+
-    '<button data-a="vscope">🔭 この札から下を俯瞰する</button>'+
+    '<button data-a="vscope">'+((viewScope&&viewScope.node===nodeId)?
+      "🔭 この札から下の俯瞰をやめる":"🔭 この札から下を俯瞰する")+'</button>'+
     '<button class="gold" data-a="mir">'+(n.sync?"🔗 つなぎを見る・もう1枚足す":"🔗 ほかの紙の札とつなぐ")+'<kbd>⏎</kbd></button>'+
     '<button data-a="x">やめる<kbd>esc</kbd></button>';
   box._node=nodeId;box._kind="sub";
@@ -912,7 +923,10 @@ function subAct(a){
   const id=$("subMenu")._node;
   closeSubMenu();
   if(a==="mir"){select(id);openMirPicker();}
-  else if(a==="vscope"){select(id);setViewScope(id);}
+  else if(a==="vscope"){
+    if(viewScope&&viewScope.node===id){setViewScope(null);toast("🔭 やめた（全体に戻した）");}
+    else{select(id);setViewScope(id);}
+  }
 }
 function closeSubMenu(){$("subMenu").classList.remove("open");}
 function renderCrumb(){}
@@ -1873,13 +1887,18 @@ function setViewScope(id){
   drawLinks(visibleSet());paintViewMarks();
 }
 function renderViewScope(){
-  const box=$("vscope");
-  if(!viewScope||!state.nodes[viewScope.node]){box.className="";box.innerHTML="";return;}
+  const box=$("vscope"),bar=$("vsbar");
+  if(!viewScope||!state.nodes[viewScope.node]){
+    box.className="";box.innerHTML="";bar.classList.remove("open");return;}
+  const nn=state.nodes[viewScope.node];
+  $("vstx").innerHTML="🔭 <b>"+esc(oneLine(nn.text).slice(0,20))+"</b> から下の "+
+    scopeIds(nn.id).length+" 枚を俯瞰中";
+  bar.classList.add("open");
   const n=state.nodes[viewScope.node];
   box.className="on";
   box.innerHTML='▼ <b>'+esc(oneLine(n.text).slice(0,18))+'</b> から下の '+scopeIds(n.id).length+
     ' 枚だけを俯瞰する<span style="flex:1"></span><button id="vscopeOff">全体に戻す</button>';
-  $("vscopeOff").onclick=()=>setViewScope(null);
+  $("vscopeOff").onclick=()=>{setViewScope(null);toast("🔭 全体に戻した");};
 }
 function addView(){
   const inp=$("viewInput"), t=inp.value.trim();
@@ -3813,6 +3832,7 @@ $("chkBtn").onclick=()=>{if(state.selected)toggleChkCard(state.selected);};
 $("mirBtn").onclick=openMirPicker;
 $("mirClose").onclick=closeModals;
 $("pairStop").onclick=()=>{stopPair();toast("やめた");};
+$("vsStop").onclick=()=>{setViewScope(null);toast("🔭 やめた（全体に戻した）");};
 $("cancelBtn").onclick=()=>{if(state.selected)toggleCancel(state.selected);};
 document.addEventListener("keydown",e=>{
   if(e.key==="Shift"&&!ed&&state.selected&&!document.querySelector(".modal.open"))
@@ -3862,6 +3882,7 @@ document.addEventListener("keydown",e=>{
       if(b)b.click();return;}
     if(e.key==="Escape"){e.preventDefault();closeSubMenu();return;}
   }
+  if(viewScope&&(e.key==="Escape"||e.key==="Esc")){e.preventDefault();setViewScope(null);toast("🔭 やめた（全体に戻した）");return;}
   if(pairing&&e.key==="Escape"){e.preventDefault();stopPair();toast("🔗 やめた");return;}
   if(linking&&e.key==="Escape"){e.preventDefault();stopLink();toast("⌁ やめた");return;}
   if(selFrame&&e.key==="Escape"){e.preventDefault();selFrame=null;renderFrames();paintFrameMarks();return;}
