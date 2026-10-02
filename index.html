@@ -205,6 +205,12 @@
   #frames{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none}
   .frame.sel{border-style:solid;box-shadow:0 0 0 2px var(--fc,#6f7bd6),0 0 50px -12px var(--fc,#6f7bd6) inset}
   .frame.sel .ftag{background:var(--fc,#6f7bd6);color:#07070d;font-weight:700}
+  /* ⤷ ここで0.8秒とまると、その札の子になる */
+  .node.droptarget{outline:2px dashed #7cff9b;outline-offset:4px;
+    box-shadow:0 0 0 3px rgba(124,255,155,.18),0 0 34px -6px #7cff9b;
+    animation:dropwait .8s linear;}
+  @keyframes dropwait{from{outline-color:rgba(124,255,155,.25)}to{outline-color:#7cff9b}}
+  .node.dropped{outline:2px solid #7cff9b;outline-offset:4px;box-shadow:0 0 0 4px rgba(124,255,155,.35);}
   .node.inframe{outline:1px dashed var(--ic,#6f7bd6);outline-offset:3px}
   .frame{position:absolute;border:2px dashed var(--fc,#6f7bd6);border-radius:16px;pointer-events:none;
     box-shadow:0 0 30px -14px var(--fc,#6f7bd6) inset}
@@ -686,7 +692,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.40.1";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.41.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -1383,15 +1389,30 @@ function startIds(m){                        /* スタートの札は何枚あ�
 }
 function startId(){const s=startIds();return s.size?[...s][0]:null;}
 /* ☑ チェックの札。n.chk が無い＝ふつうの札／0＝まだ／1＝済み */
+let chkMemo=null;                                /* 描くたびに1回だけ数える（札ごとに子孫を走ると重い） */
+function chkCalc(){
+  const kids={},ns=state.nodes;
+  Object.values(ns).forEach(n=>{if(n.parent&&ns[n.parent])(kids[n.parent]=kids[n.parent]||[]).push(n.id);});
+  const memo={};
+  const walk=id=>{
+    if(memo[id])return memo[id];
+    memo[id]={all:0,done:0,no:0};                  /* 先に置く＝輪になっていても止まる */
+    let a=0,d=0,c=0;
+    (kids[id]||[]).forEach(k=>{
+      const x=ns[k];if(!x)return;
+      if(x.cancel)c++;
+      else if(x.chk!==undefined){a++;if(x.chk===1)d++;}
+      const r=walk(k);a+=r.all;d+=r.done;c+=r.no;
+    });
+    return memo[id]={all:a,done:d,no:c};
+  };
+  Object.keys(ns).forEach(walk);
+  return memo;
+}
 function chkCount(id){
-  const s=subtree(id);s.delete(id);
-  let all=0,done=0,no=0;
-  s.forEach(k=>{const x=state.nodes[k];if(!x)return;
-    if(x.cancel){no++;return;}                     /* キャンセルした札は、分母から外す */
-    if(x.chk===undefined)return;
-    all++;if(x.chk===1)done++;});
-  if(!all&&!no)return"";
-  return '<span class="cnt">'+(all?done+"/"+all:"")+(no?(all?" ":"")+"✕"+no:"")+'</span>';
+  const m=(chkMemo||(chkMemo=chkCalc()))[id];
+  if(!m||(!m.all&&!m.no))return"";
+  return '<span class="cnt">'+(m.all?m.done+"/"+m.all:"")+(m.no?(m.all?" ":"")+"✕"+m.no:"")+'</span>';
 }
 function toggleCancel(id){                        /* ✕ キャンセルモード：その予定をやめた印（斜め線） */
   const n=state.nodes[id];if(!n)return;
@@ -1445,13 +1466,20 @@ function setStart(id){
   render();openInsp();
   toast(n.start?"▶ この札をスタートにした":"▶ スタートをやめた");
 }
-let mirBusy=false;
+let mirBusy=false,mirAt=0;
+function anySync(){                                /* つないだ札が1枚も無ければ、そろえ直しは丸ごと省く */
+  for(const k in db.maps){const m=db.maps[k];
+    for(const i in m.nodes){if(m.nodes[i].sync)return true;}}
+  return false;
+}
 function render(){
-  if(!mirBusy){                                    /* 🔗 つないだ札の下の枝を、描く前にそろえる */
-    mirBusy=true;
-    try{ let ch=reconcileMirrors(); if(mirrorLinks())ch=true; if(ch)saveSoon(); }catch(e){}
+  const now=Date.now();
+  if(!mirBusy&&now-mirAt>500){                     /* 🔗 つないだ札の下の枝をそろえる（0.5秒に1回まで） */
+    mirAt=now;mirBusy=true;
+    try{ if(anySync()){ let ch=reconcileMirrors(); if(mirrorLinks())ch=true; if(ch)saveSoon(); } }catch(e){}
     mirBusy=false;
   }
+  chkMemo=null;                                    /* この描画ぶんの数え直し */
   renderToolsIfNeeded();
   const keep=visibleSet();
   const sid=startIds();
@@ -2082,8 +2110,28 @@ function toWorld(cx,cy){
 }
 
 /* ===== 札の操作 ===== */
+function parentCandidate(dragId){                 /* 動かしている札の「上辺の真ん中」が、どの札の下にいるか */
+  const n=state.nodes[dragId];if(!n)return null;
+  const b=boxOf(n),px=b.cx,py=b.t;
+  let best=null,bd=1e9;
+  Object.values(state.nodes).forEach(m=>{
+    if(m.id===dragId||isDesc(m.id,dragId))return;  /* 自分と、自分の子孫にはつけない（輪になる） */
+    const q=boxOf(m),qr=q.l+q.w,qb=q.t+q.h;
+    const inside=px>=q.l&&px<=qr&&py>=q.t&&py<=qb;
+    const below=px>=q.l-24&&px<=qr+24&&py>qb&&py-qb<170;   /* すぐ下にいる */
+    if(!inside&&!below)return;
+    const d=Math.hypot(px-q.cx,py-q.cy);
+    if(d<bd){bd=d;best=m;}
+  });
+  return best;
+}
 function wireNode(el){
   let dragging=false,moved=false,sx,sy,ox,oy,wasSel=false,ptype="mouse";
+  let dropT=null,dropId=null;                      /* 付け替え待ち */
+  const dropOff=()=>{
+    clearTimeout(dropT);dropT=null;
+    if(dropId){const t=nodeEl(dropId);if(t)t.classList.remove("droptarget");dropId=null;}
+  };
   let holdT=null,group=null;                       /* 2秒つかんだら子ぜんぶ一緒に：group={id:[x,y]} */
   const endHold=()=>{clearTimeout(holdT);holdT=null;
     if(group){world.querySelectorAll(".node.grab,.node.grabkid").forEach(x=>x.classList.remove("grab","grabkid"));group=null;}};
@@ -2155,18 +2203,40 @@ function wireNode(el){
     }else{
       n.x=sn(ox+dx);n.y=sn(oy+dy);
       el.style.left=n.x+"px";el.style.top=n.y+"px";
+      const c=parentCandidate(n.id);               /* その札の下で0.8秒とまると、その札の子になる */
+      const cid=(c&&c.id!==n.parent)?c.id:null;
+      if(cid!==dropId){
+        dropOff();
+        if(cid){
+          dropId=cid;
+          const t=nodeEl(cid);if(t)t.classList.add("droptarget");
+          dropT=setTimeout(()=>{
+            dropT=null;
+            if(!dragging||!state.nodes[n.id]||!state.nodes[cid])return;
+            snapshot();
+            n.parent=cid;
+            if(navigator.vibrate)try{navigator.vibrate(20);}catch(err){}
+            toast("⤷ 「"+oneLine(state.nodes[cid].text).slice(0,12)+"」の下につないだ");
+            const t2=nodeEl(cid);if(t2){t2.classList.remove("droptarget");t2.classList.add("dropped");
+              setTimeout(()=>t2.classList.remove("dropped"),500);}
+            dropId=null;
+            drawLinks(visibleSet());save();
+          },800);
+        }
+      }
     }
     drawLinks(visibleSet());
   });
   el.addEventListener("pointerup",()=>{
     if(!dragging)return;
     dragging=false;
+    dropOff();
     const wasGroup=!!group;endHold();
     if(moved){save();return;}
     if(wasGroup)return;                              /* 2秒つかんで離しただけ＝書き始めない */
     if(ptype!=="mouse"&&wasSel)startEdit(el);                 /* 指：選んである札をもう一度タップ＝書く */
   });
-  el.addEventListener("pointercancel",()=>{dragging=false;endHold();});
+  el.addEventListener("pointercancel",()=>{dragging=false;dropOff();endHold();});
   el.addEventListener("contextmenu",e=>{           /* 右クリック＝⤵ 下のノートの小窓 */
     if(!state.nodes[el.dataset.id]||e.target.closest("[contenteditable]"))return;
     e.preventDefault();e.stopPropagation();
