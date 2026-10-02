@@ -692,7 +692,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.41.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.41.2";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -2117,8 +2117,8 @@ function parentCandidate(dragId){                 /* 動かしている札の「
   Object.values(state.nodes).forEach(m=>{
     if(m.id===dragId||isDesc(m.id,dragId))return;  /* 自分と、自分の子孫にはつけない（輪になる） */
     const q=boxOf(m),qr=q.l+q.w,qb=q.t+q.h;
-    const inside=px>=q.l&&px<=qr&&py>=q.t&&py<=qb;
-    const below=px>=q.l-24&&px<=qr+24&&py>qb&&py-qb<170;   /* すぐ下にいる */
+    const inside=px>=q.l&&px<=qr&&py>=q.t&&py<=qb;        /* 相手の上に重ねている */
+    const below=px>=q.l&&px<=qr&&py>qb&&py-qb<90;         /* すぐ下にいる（横も重なっている時だけ） */
     if(!inside&&!below)return;
     const d=Math.hypot(px-q.cx,py-q.cy);
     if(d<bd){bd=d;best=m;}
@@ -2127,7 +2127,7 @@ function parentCandidate(dragId){                 /* 動かしている札の「
 }
 function wireNode(el){
   let dragging=false,moved=false,sx,sy,ox,oy,wasSel=false,ptype="mouse";
-  let dropT=null,dropId=null;                      /* 付け替え待ち */
+  let dropT=null,dropId=null,dropX=0,dropY=0,dropDone=false;  /* 付け替え待ち（止まってから数える／1回つかむ間に1度だけ） */
   const dropOff=()=>{
     clearTimeout(dropT);dropT=null;
     if(dropId){const t=nodeEl(dropId);if(t)t.classList.remove("droptarget");dropId=null;}
@@ -2172,7 +2172,7 @@ function wireNode(el){
     e.stopPropagation();
     wasSel=state.selected===el.dataset.id;ptype=e.pointerType;lastPtype=e.pointerType;
     select(el.dataset.id);
-    dragging=true;moved=false;sx=e.clientX;sy=e.clientY;
+    dragging=true;moved=false;sx=e.clientX;sy=e.clientY;dropX=e.clientX;dropY=e.clientY;dropDone=false;
     const n=state.nodes[el.dataset.id];ox=n.x;oy=n.y;
     try{el.setPointerCapture(e.pointerId);}catch(err){}
     endHold();
@@ -2203,26 +2203,28 @@ function wireNode(el){
     }else{
       n.x=sn(ox+dx);n.y=sn(oy+dy);
       el.style.left=n.x+"px";el.style.top=n.y+"px";
-      const c=parentCandidate(n.id);               /* その札の下で0.8秒とまると、その札の子になる */
-      const cid=(c&&c.id!==n.parent)?c.id:null;
-      if(cid!==dropId){
+      /* 手を止めて0.8秒で、その札の子になる。動かしている間は数え直し（勝手に変わらない） */
+      if(!dropDone&&Math.hypot(e.clientX-dropX,e.clientY-dropY)>6){
+        dropX=e.clientX;dropY=e.clientY;
         dropOff();
-        if(cid){
-          dropId=cid;
-          const t=nodeEl(cid);if(t)t.classList.add("droptarget");
-          dropT=setTimeout(()=>{
+        dropT=setTimeout(()=>{                     /* まず0.3秒とまったら、相手を光らせる */
+          const c=parentCandidate(n.id);
+          if(!dragging||!c||c.id===n.parent)return;
+          dropId=c.id;
+          const t=nodeEl(c.id);if(t)t.classList.add("droptarget");
+          dropT=setTimeout(()=>{                   /* さらに0.5秒そのままなら、付け替える */
             dropT=null;
-            if(!dragging||!state.nodes[n.id]||!state.nodes[cid])return;
+            if(!dragging||!state.nodes[n.id]||!state.nodes[c.id]||n.parent===c.id)return;
             snapshot();
-            n.parent=cid;
+            n.parent=c.id;dropDone=true;            /* つかんでいる間の付け替えは1回だけ */
             if(navigator.vibrate)try{navigator.vibrate(20);}catch(err){}
-            toast("⤷ 「"+oneLine(state.nodes[cid].text).slice(0,12)+"」の下につないだ");
-            const t2=nodeEl(cid);if(t2){t2.classList.remove("droptarget");t2.classList.add("dropped");
+            toast("⤷ 「"+oneLine(state.nodes[c.id].text).slice(0,12)+"」の下につないだ（⌘Zで戻せる）");
+            const t2=nodeEl(c.id);if(t2){t2.classList.remove("droptarget");t2.classList.add("dropped");
               setTimeout(()=>t2.classList.remove("dropped"),500);}
             dropId=null;
             drawLinks(visibleSet());save();
-          },800);
-        }
+          },500);
+        },300);
       }
     }
     drawLinks(visibleSet());
