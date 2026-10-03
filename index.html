@@ -703,7 +703,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.43.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.44.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -788,7 +788,14 @@ function kidsOf(id){return Object.values(state.nodes).filter(n=>n.parent===id);}
 function rootsOf(){return Object.values(state.nodes).filter(n=>!n.parent||!state.nodes[n.parent]);}
 function isDesc(id,anc){let n=state.nodes[id];
   while(n&&n.parent){ if(n.parent===anc) return true; n=state.nodes[n.parent]; } return false;}
-function nodeEl(id){return world.querySelector('.node[data-id="'+id+'"]');}
+const elCache=new Map();                       /* 札のDOMの覚え書き。線を引くたび world 全体を探すのをやめる */
+function nodeEl(id){
+  const c=elCache.get(id);
+  if(c&&c.isConnected&&c.dataset.id===id)return c;
+  const el=world.querySelector('.node[data-id="'+id+'"]');
+  if(el)elCache.set(id,el);else elCache.delete(id);
+  return el;
+}
 
 /* ===== 履歴 ===== */
 function capture(){return JSON.stringify({nodes:state.nodes,seq:state.seq,selected:state.selected,
@@ -2392,6 +2399,7 @@ function startEdit(el,opt){
   if(prev){closeEd(prev);render();}
   document.body.classList.add("editing");
   renderEdbar();edbar.classList.add("open");placeEdbar();keepInView(id);
+  edBox=edBoxSig();
 }
 function closeEd(e){
   const t=e.t;
@@ -2411,7 +2419,7 @@ function closeEd(e){
 }
 function endEdit(){
   if(!ed)return;
-  const e=ed;ed=null;
+  const e=ed;ed=null;edBox="";
   closeEd(e);
   if(document.activeElement===e.t)e.t.blur();
   document.body.classList.remove("editing");
@@ -2484,7 +2492,16 @@ ED_EVENTS.beforeinput=function(ev){                           /* キーの来な
     ev.preventDefault();nextFromEdit("sib");
   }
 };
-ED_EVENTS.input=function(){commitEd();spreadSync(ed&&ed.id);saveSoon();drawLinks(visibleSet());placeEdbar();};
+function edBoxSig(){return ed?(ed.el.offsetWidth+"x"+ed.el.offsetHeight):"";}
+let edBox="";
+ED_EVENTS.input=function(){
+  commitEd();spreadSync(ed&&ed.id);saveSoon();
+  if(!ed)return;
+  const sig=edBoxSig();
+  if(sig===edBox)return;        /* 札の大きさが変わっていない＝線もバーも動かないので描き直さない（打つたびの重さの正体） */
+  edBox=sig;
+  drawLinks(visibleSet());placeEdbar();
+};
 ED_EVENTS.blur=function(ev){
   if(!ed||ev.target!==ed.t)return;
   commitEd();save();
