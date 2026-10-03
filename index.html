@@ -417,6 +417,10 @@
   #calHead{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0 12px;}
   #calHead .big{font-family:var(--mono);font-size:22px;color:#7cff9b;}
   #calHead .sub{font-size:11.5px;color:var(--muted);}
+  .calpick{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:16px;
+    padding-top:12px;border-top:1px dashed var(--line);}
+  .calpick .cap{margin:0;color:var(--muted);font-size:11.5px;}
+  .calpick input{width:148px;font-size:12px;}
   .calrow{display:flex;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line);
     border-radius:6px;margin-bottom:6px;background:#0b0b16;cursor:pointer;}
   .calrow:hover{border-color:#7cff9b;background:#0e150f;}
@@ -679,7 +683,9 @@
     <span class="sp"><button id="calClose">閉じる</button></span></h2>
   <div id="calHead"></div>
   <div id="calList"></div>
-  <div class="subtle">日付のない紙にも、右の欄から日付を付けられる（付けるとここに並ぶ）。</div>
+  <div class="subtle">日付のない紙にも、右の欄から日付を付けられる（付けるとここに並ぶ）。<br>
+    夜ふかしの0〜3時は、まだ前の日あつかい（日付が変わっても、そのまま昨日の紙に書ける）。<br>
+    さかのぼって書きたいときは、いちばん下の「べつの日の紙」から。</div>
 </div>
 
 <div class="modal" id="bak">
@@ -697,7 +703,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.42.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.43.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -3600,7 +3606,10 @@ function openBak(){
    紙に m.day="YYYY-MM-DD"。付いていない紙は、名前の「9/22」みたいな書き方から推し量る
    ========================================================= */
 function dayKey(d){const z=n=>(n<10?"0":"")+n;return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate());}
-function todayKey(){return dayKey(new Date());}
+const DAY_SWITCH_H=3;                          /* 夜ふかし：朝3時までは「前の日」あつかい（日付が変わっても紙は昨日のまま） */
+function shiftedNow(){const d=new Date();d.setHours(d.getHours()-DAY_SWITCH_H);return d;}
+function todayKey(){return dayKey(shiftedNow());}
+function isLateNight(){return new Date().getHours()<DAY_SWITCH_H;}
 function dayLabel(k){
   const [y,m,d]=k.split("-").map(Number);
   const dt=new Date(y,m-1,d);
@@ -3632,7 +3641,7 @@ function noDayRows(){
 }
 function streakOf(rows){                       /* 今日（無ければ昨日）から、何日つづいているか */
   const has=new Set(rows.map(r=>r.k));
-  const d=new Date();
+  const d=shiftedNow();
   if(!has.has(dayKey(d)))d.setDate(d.getDate()-1);
   let n=0;
   while(has.has(dayKey(d))){n++;d.setDate(d.getDate()-1);}
@@ -3642,13 +3651,15 @@ function daysBetween(a,b){                     /* 日付のすき間（何日あ
   const [y1,m1,d1]=a.split("-").map(Number),[y2,m2,d2]=b.split("-").map(Number);
   return Math.round((new Date(y1,m1-1,d1)-new Date(y2,m2-1,d2))/86400000);
 }
-function makeToday(){
-  const k=todayKey(), hit=dayRows().find(r=>r.k===k);
-  if(hit){closeModals();switchTo(hit.id);toast("今日の紙をひらいた");return;}
+function makeDay(k){                            /* その日の紙へ。無ければ作る（今日でなくてもいい） */
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(k||""))return;
+  const hit=dayRows().find(r=>r.k===k);
+  if(hit){closeModals();switchTo(hit.id);toast(dayLabel(k)+"の紙をひらいた");return;}
   const id=blankMap(dayLabel(k));
   db.maps[id].day=k; db.maps[id].title=dayLabel(k);
-  closeModals();switchTo(id);save();toast("📅 今日の紙を作った");
+  closeModals();switchTo(id);save();toast("📅 "+dayLabel(k)+"の紙を作った");
 }
+function makeToday(){makeDay(todayKey());}
 function rowTitle(r){                           /* 名前が日付そのものなら、中身の1枚目を見せる */
   const t=mapTitle(r.m);
   if(t!==dayLabel(r.k))return t;
@@ -3662,7 +3673,8 @@ function renderCal(){
   const thisMonth=rows.filter(r=>r.k.slice(0,7)===k.slice(0,7)).length;
   $("calHead").innerHTML=
     '<span class="big">🔥 '+st+'日</span>'+
-    '<span class="sub">つづけて書いている<br>今月 '+thisMonth+' 日 ／ ぜんぶで '+rows.length+' 日</span>'+
+    '<span class="sub">つづけて書いている<br>今月 '+thisMonth+' 日 ／ ぜんぶで '+rows.length+' 日'+
+      (isLateNight()?'<br><b style="color:#7cff9b">🌙 夜ふかし中：朝'+DAY_SWITCH_H+'時までは '+dayLabel(k)+' の紙</b>':"")+'</span>'+
     '<span style="flex:1"></span>'+
     '<button id="calToday" class="primary">'+(hasToday?"今日の紙をひらく":"＋ 今日の紙を作る")+'</button>';
   $("calToday").onclick=makeToday;
@@ -3685,7 +3697,12 @@ function renderCal(){
       nd.map(x=>'<div class="calrow" data-id="'+x.id+'"><span class="t">'+esc(mapTitle(x.m))+'</span>'+
         '<input type="date" data-set="'+x.id+'" style="width:150px" onclick="event.stopPropagation()"></div>').join("");
   }
+  html+='<div class="calpick"><span class="cap">べつの日の紙も作れる</span>'+
+    '<input type="date" id="calPick" value="'+k+'">'+
+    '<button id="calGo">この日の紙をひらく／作る</button></div>';
   $("calList").innerHTML=html;
+  $("calGo").onclick=()=>makeDay($("calPick").value);
+  $("calPick").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();makeDay($("calPick").value);}};
   $("calList").querySelectorAll(".calrow").forEach(el=>el.onclick=()=>{
     closeModals();switchTo(el.dataset.id);
   });
