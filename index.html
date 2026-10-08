@@ -639,12 +639,12 @@
   <div class="subtle">コピーする文には元データを入れない（AIの邪魔になるので）。.md で保存したときだけ末尾に入り、📂 で読み戻せる。</div>
 </div>
 
-<div id="hint">空いてる所をダブルクリック＝札 ／ 書いて⏎＝次の札　⇥＝下に札　⇧⏎＝改行　⌥数字＝意味を貼る ／ ⇧クリック＝つながるやん線（⌥⇧で外す） ／ 右クリック＝⤵下のノート　⌥クリック＝下のノートへ移る ／ ⌘Z</div>
+<div id="hint">空いてる所をダブルクリック＝札 ／ 書いて⏎＝真下につながる札　⇥＝右に札　⇧⇥＝兄弟の札　⇧⏎＝改行　⌥数字＝意味を貼る ／ ⇧クリック＝つながるやん線（⌥⇧で外す） ／ 右クリック＝⤵下のノート　⌥クリック＝下のノートへ移る ／ ⌘Z</div>
 <div id="toast"></div>
 
 <div id="edbar">
   <div class="row">
-    <span class="eb" data-a="next"><b>⏎</b>次の札</span>
+    <span class="eb" data-a="next"><b>⏎</b>真下に札</span>
     <span class="eb" data-a="child"><b>⇥</b>下に札</span>
     <span class="eb touchhide" data-a="br"><b>⇧⏎</b>改行</span>
     <span class="eb" data-a="done"><b>esc</b>完了</span>
@@ -703,7 +703,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.44.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.45.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -2362,7 +2362,7 @@ function wireNode(el){
 
 /* =========================================================
    書く（札の中の文字）
-   ⏎＝書き終わって次の札 ／ ⇥＝下に札 ／ ⇧⏎＝札の中で改行 ／ ⌥数字＝意味を貼る ／ esc＝完了
+   ⏎＝真下につながる札 ／ ⇥＝右に札 ／ ⇧⇥＝兄弟の札 ／ ⇧⏎＝札の中で改行 ／ ⌥数字＝意味を貼る ／ esc＝完了
    書いている途中も1文字ごとに保存する
    ========================================================= */
 let ed=null;                                   // いま書いている札 {id,el,t,fresh,from,composing,justConverted}
@@ -2453,7 +2453,7 @@ function nextFromEdit(kind){
   const cur=state.nodes[ed.id];
   if(!cur||isPH(cur.text)){endEdit();return;}           /* 空のまま⏎＝そこで止まる */
   state.selected=ed.id;
-  if(kind==="child")addChild(true);else addSibling(true);
+  if(kind==="child")addChild(true);else if(kind==="under")addUnder(true);else addSibling(true);
 }
 function roleByDigit(d){if(d===0)return null;const r=db.roles[d-1];return r?r.id:undefined;}
 function setRole(id,rid){
@@ -2476,9 +2476,9 @@ ED_EVENTS.keydown=function(ev){
     if(ev.shiftKey){lineBreak();return;}                      /* ⇧⏎＝札の中で改行 */
     if(ev.metaKey||ev.ctrlKey){endEdit();return;}             /* ⌘⏎＝ここで書き終わる */
     if(Date.now()-ed.justConverted<120)return;
-    nextFromEdit("sib");return;                                /* ⏎＝次の札 */
+    nextFromEdit("under");return;                              /* ⏎＝真下につながる札 */
   }
-  if(k==="Tab"){ev.preventDefault();if(!ev.shiftKey)nextFromEdit("child");return;}
+  if(k==="Tab"){ev.preventDefault();nextFromEdit(ev.shiftKey?"sib":"child");return;}   /* ⇥＝右に子 ⇧⇥＝同じ親の兄弟 */
   if(k==="Escape"){ev.preventDefault();endEdit();return;}
   if(ev.altKey&&!ev.metaKey&&!ev.ctrlKey&&/^Digit[0-9]$/.test(ev.code)){   /* ⌥1〜9＝意味を貼る ⌥0＝まだ */
     ev.preventDefault();
@@ -2489,7 +2489,7 @@ ED_EVENTS.keydown=function(ev){
 ED_EVENTS.beforeinput=function(ev){                           /* キーの来ないキーボード（iPhoneなど）の改行キー */
   if(ed&&ev.inputType==="insertParagraph"&&!ev.isComposing){
     if(touchy())return;                                       /* 指の端末＝そのまま改行（⇧⏎が押せないので） */
-    ev.preventDefault();nextFromEdit("sib");
+    ev.preventDefault();nextFromEdit("under");
   }
 };
 function edBoxSig(){return ed?(ed.el.offsetWidth+"x"+ed.el.offsetHeight):"";}
@@ -2568,7 +2568,7 @@ function edbarAct(e){
   const b=e.target.closest(".eb");
   if(!b||!ed)return;
   const a=b.dataset.a,k=b.dataset.k;
-  if(a==="next")nextFromEdit("sib");
+  if(a==="next")nextFromEdit("under");
   else if(a==="child")nextFromEdit("child");
   else if(a==="br")lineBreak();
   else if(a==="done")endEdit();
@@ -2623,6 +2623,16 @@ function addChild(fresh){
   const pos=clearSpot(b.l+b.w+80,y);
   const id=add(PH,pos.x,pos.y,pid);
   select(id);render();startEdit(nodeEl(id),{noSnap:true,fresh:fresh,from:pid});
+}
+/* ⏎の札：いまの札の真下に、いまの札から線をつないで（数珠つなぎ） */
+function addUnder(fresh){
+  const s=state.nodes[state.selected];
+  if(!s){addFree();return;}
+  snapshot();
+  const b=boxOf(s);
+  const pos=clearSpot(s.x,b.t+b.h+26);
+  const id=add(PH,pos.x,pos.y,s.id);
+  select(id);render();startEdit(nodeEl(id),{noSnap:true,fresh:fresh,from:s.id});
 }
 /* 次の札（兄弟）：いまの札のすぐ下 */
 function addSibling(fresh){
@@ -4010,8 +4020,8 @@ document.addEventListener("keydown",e=>{
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="y"){e.preventDefault();redo();return;}
   if(e.altKey&&!e.metaKey&&!e.ctrlKey&&/^Digit[0-9]$/.test(e.code)&&state.selected){
     e.preventDefault();const rid=roleByDigit(+e.code.slice(5));if(rid!==undefined)setRole(state.selected,rid);return;}
-  if(e.key==="Tab"){e.preventDefault();addChild(true);}
-  else if(e.key==="Enter"){e.preventDefault();addSibling(true);}
+  if(e.key==="Tab"){e.preventDefault();e.shiftKey?addSibling(true):addChild(true);}
+  else if(e.key==="Enter"){e.preventDefault();addUnder(true);}
   else if(e.key==="Delete"||e.key==="Backspace"){
     e.preventDefault();
     if(selFrame){                                   /* 枠を選んでいるなら、枠だけ外す */
