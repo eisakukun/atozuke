@@ -289,12 +289,23 @@
   .node.king .head{font-size:10.5px;font-weight:800;letter-spacing:.14em;}
   .node.king .txt{font-size:15.5px;font-weight:800;}
   /* ＿ 下線：書いている時に文字を選ぶと「下線」が出る。選んだ所だけに線が付く */
-  ::highlight(ul){text-decoration:underline;text-decoration-color:#ffe14a;text-decoration-thickness:2px;}
-  #ulpop{position:fixed;left:0;top:0;z-index:39;display:none;padding:6px 13px;border-radius:999px;cursor:pointer;
-    font:700 12.5px/1 var(--mono);letter-spacing:.06em;color:#0b0b12;background:#ffe14a;border:0;
-    box-shadow:0 0 0 2px #07070d,0 0 22px -4px #ffe14a,0 6px 16px rgba(0,0,0,.6);user-select:none;-webkit-user-select:none;}
-  #ulpop.open{display:block}
-  #ulpop.off{background:#1a1a2c;color:#ffe14a;box-shadow:0 0 0 1.5px #ffe14a,0 6px 16px rgba(0,0,0,.6);}
+  ::highlight(ul0){text-decoration:underline dotted #ffe14a;text-decoration-thickness:2.5px;text-underline-offset:6px;}
+  ::highlight(ul1){text-decoration:underline dotted #ff5b9a;text-decoration-thickness:2.5px;text-underline-offset:6px;}
+  ::highlight(ul2){text-decoration:underline dotted #00e5ff;text-decoration-thickness:2.5px;text-underline-offset:6px;}
+  ::highlight(ul3){text-decoration:underline dotted #7cff9b;text-decoration-thickness:2.5px;text-underline-offset:6px;}
+  ::highlight(ul4){text-decoration:underline dotted #ff9f43;text-decoration-thickness:2.5px;text-underline-offset:6px;}
+  ::highlight(ul5){text-decoration:underline dotted #ffffff;text-decoration-thickness:2.5px;text-underline-offset:6px;}
+  .node .txt{padding-bottom:3px;}                   /* いちばん下の行の点線が切れないように */
+  #ulpop{position:fixed;left:0;top:0;z-index:39;display:none;align-items:center;gap:7px;padding:6px 10px;border-radius:999px;
+    font:700 11.5px/1 var(--mono);color:#aeb9dc;background:#12121f;border:1px solid rgba(160,180,255,.4);
+    box-shadow:0 0 0 2px #07070d,0 6px 18px rgba(0,0,0,.7);user-select:none;-webkit-user-select:none;}
+  #ulpop.open{display:flex}
+  #ulpop .uc{width:20px;height:20px;border-radius:50%;cursor:pointer;border:2px solid #07070d;box-shadow:0 0 0 1px rgba(255,255,255,.35);}
+  #ulpop .uc:hover{transform:scale(1.18);}
+  #ulpop .ux{cursor:pointer;padding:4px 8px;border-radius:999px;border:1px solid #ff5b7a;color:#ff5b7a;display:none;}
+  #ulpop.has .ux{display:block}
+  @media (pointer:coarse){ #ulpop .uc{width:28px;height:28px;} #ulpop{gap:9px;padding:8px 12px;} }
+  /* ☑ チェックの札：やることにして、押すと済みになる */
   .node.haschk{padding-left:48px;}
   .node.haschk .grow.l{left:-24px;}                 /* 左の＋は、四角と重ならない所へ逃がす */
   .node .ck{position:absolute;left:11px;top:50%;transform:translateY(-50%);
@@ -727,7 +738,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.47.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.48.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -2401,8 +2412,9 @@ function readTxt(t){return (t.innerText||t.textContent||"").replace(/\u00a0/g," 
 /* ---- ＿ 下線（札の文字の一部に線を引く） ----
    文字そのものには手を入れず、n.ul=[[始まり,終わり],…] と位置だけ持つ。
    書いている間は Range が文字の増減に自分でついてくるので、書き終わりに位置へ戻すだけでいい */
-const UL=(window.CSS&&CSS.highlights&&window.Highlight)?new Highlight():null;
-if(UL)CSS.highlights.set("ul",UL);
+const UL_COLORS=["#ffe14a","#ff5b9a","#00e5ff","#7cff9b","#ff9f43","#ffffff"];   /* 線の色。n.ul の3つ目が番号（無ければ0＝黄） */
+const UL=(window.CSS&&CSS.highlights&&window.Highlight)?UL_COLORS.map((c,i)=>{const h=new Highlight();CSS.highlights.set("ul"+i,h);return h;}):null;
+function ulC(p){const c=p[2]|0;return c>=0&&c<UL_COLORS.length?c:0;}
 function ulPoint(t,pos){                           /* 文字の位置 → 置き場所（改行は1文字に数える） */
   const w=document.createTreeWalker(t,NodeFilter.SHOW_TEXT|NodeFilter.SHOW_ELEMENT);
   let c=0,nd,last=null;
@@ -2418,7 +2430,7 @@ function ulOffset(t,node,off){                     /* 置き場所 → 文字の
   const f=r.cloneContents();
   return (f.textContent||"").length+f.querySelectorAll("br").length;
 }
-function ulRanges(t,list){
+function ulRanges(t,list){                         /* 位置 → [{r:Range,c:色}] */
   const out=[];
   if(!UL||!Array.isArray(list))return out;
   const max=(t.textContent||"").length+t.querySelectorAll("br").length;
@@ -2426,22 +2438,35 @@ function ulRanges(t,list){
     const s=Math.max(0,p[0]),e=Math.min(max,p[1]);
     if(!(e>s))return;
     const a=ulPoint(t,s),b=ulPoint(t,e),r=document.createRange();
-    try{r.setStart(a[0],a[1]);r.setEnd(b[0],b[1]);out.push(r);}catch(x){}
+    try{r.setStart(a[0],a[1]);r.setEnd(b[0],b[1]);out.push({r:r,c:ulC(p)});}catch(x){}
   });
   return out;
 }
-function ulMerge(list){                            /* 重なり・隣り合わせは1本にまとめる */
-  const a=list.filter(p=>p[1]>p[0]).sort((x,y)=>x[0]-y[0]),o=[];
-  a.forEach(p=>{const l=o[o.length-1];if(l&&p[0]<=l[1])l[1]=Math.max(l[1],p[1]);else o.push([p[0],p[1]]);});
+function ulMerge(list){                            /* 同じ色の重なり・隣り合わせは1本にまとめる */
+  const a=list.filter(p=>p[1]>p[0]).map(p=>[p[0],p[1],ulC(p)]).sort((x,y)=>x[0]-y[0]),o=[];
+  a.forEach(p=>{
+    const l=o[o.length-1];
+    if(l&&p[0]<=l[1]&&l[2]===p[2])l[1]=Math.max(l[1],p[1]);
+    else{ if(l&&p[0]<l[1])p[0]=l[1]; if(p[1]>p[0])o.push(p); }
+  });
+  return o.map(p=>p[2]?p:[p[0],p[1]]);
+}
+function ulCut(list,a,b){                          /* a〜b の線だけ抜く */
+  const o=[];
+  list.forEach(p=>{
+    if(p[1]<=a||p[0]>=b){o.push(p);return;}
+    if(p[0]<a)o.push([p[0],a,ulC(p)]);
+    if(p[1]>b)o.push([b,p[1],ulC(p)]);
+  });
   return o;
 }
 function ulRead(e){                                /* 書いている札の線を、位置に戻す（前後の空白ぶんは詰める） */
   const t=e.t;
   const raw=(t.innerText||t.textContent||"").replace(/\u00a0/g," ").replace(/\r/g,"");
   const lead=raw.length-raw.replace(/^\s+/,"").length, len=raw.trim().length;
-  return ulMerge((e.ul||[]).filter(r=>t.contains(r.startContainer)&&t.contains(r.endContainer)).map(r=>[
-    Math.min(len,Math.max(0,ulOffset(t,r.startContainer,r.startOffset)-lead)),
-    Math.min(len,Math.max(0,ulOffset(t,r.endContainer,r.endOffset)-lead))]));
+  return ulMerge((e.ul||[]).filter(u=>t.contains(u.r.startContainer)&&t.contains(u.r.endContainer)).map(u=>[
+    Math.min(len,Math.max(0,ulOffset(t,u.r.startContainer,u.r.startOffset)-lead)),
+    Math.min(len,Math.max(0,ulOffset(t,u.r.endContainer,u.r.endOffset)-lead)),u.c]));
 }
 function keepUl(n,e){
   if(!UL)return;
@@ -2450,17 +2475,19 @@ function keepUl(n,e){
 }
 function paintUl(){                                /* 画面に出ている札の線を引き直す */
   if(!UL)return;
-  UL.clear();
+  UL.forEach(h=>h.clear());
   world.querySelectorAll(".node").forEach(el=>{
     if(ed&&ed.el===el)return;
     const n=state.nodes[el.dataset.id];
     if(!n||!n.ul||isPH(n.text))return;
-    ulRanges(el.querySelector(".txt"),n.ul).forEach(r=>UL.add(r));
+    ulRanges(el.querySelector(".txt"),n.ul).forEach(u=>UL[u.c].add(u.r));
   });
-  if(ed)(ed.ul||[]).forEach(r=>UL.add(r));
+  if(ed)(ed.ul||[]).forEach(u=>UL[u.c].add(u.r));
 }
-const ulpop=document.createElement("button");
-ulpop.id="ulpop";ulpop.type="button";document.body.appendChild(ulpop);
+const ulpop=document.createElement("div");
+ulpop.id="ulpop";document.body.appendChild(ulpop);
+ulpop.innerHTML='<span>下線</span>'+UL_COLORS.map((c,i)=>'<i class="uc" data-c="'+i+'" style="background:'+c+'" title="この色で下線"></i>').join("")+
+  '<span class="ux" data-c="x">✕ 消す</span>';
 function ulSel(){                                  /* いま青く選んでいる所（書いている札の中だけ） */
   if(!ed||!UL)return null;
   const s=getSelection();
@@ -2470,40 +2497,39 @@ function ulSel(){                                  /* いま青く選んでい�
   const a=ulOffset(ed.t,r.startContainer,r.startOffset),b=ulOffset(ed.t,r.endContainer,r.endOffset);
   return b>a?{a:a,b:b,r:r}:null;
 }
-function ulNow(){return (ed.ul||[]).map(r=>[ulOffset(ed.t,r.startContainer,r.startOffset),ulOffset(ed.t,r.endContainer,r.endOffset)]);}
-function ulCovered(sel){return ulMerge(ulNow()).some(p=>p[0]<=sel.a&&p[1]>=sel.b);}
+function ulNow(){return (ed.ul||[]).map(u=>[ulOffset(ed.t,u.r.startContainer,u.r.startOffset),ulOffset(ed.t,u.r.endContainer,u.r.endOffset),u.c]);}
 function hideUlPop(){ulpop.classList.remove("open");}
 function showUlPop(){
   const sel=ulSel();
   if(!sel){hideUlPop();return;}
-  const off=ulCovered(sel);
-  ulpop.textContent=off?"✕ 下線を消す":"＿ 下線を引く";
-  ulpop.classList.toggle("off",off);
+  ulpop.classList.toggle("has",ulNow().some(p=>p[0]<sel.b&&p[1]>sel.a));   /* 線にかかっている時だけ「消す」を出す */
   ulpop.classList.add("open");
   const rc=sel.r.getBoundingClientRect(),w=ulpop.offsetWidth,h=ulpop.offsetHeight;
   const touch=touchy();                            /* 指の端末は上にiOSのメニューが出るので、下に置く */
-  let x=rc.left+rc.width/2-w/2, y=touch?rc.bottom+12:rc.top-h-10;
-  if(y<8)y=rc.bottom+12;
+  let x=rc.left+rc.width/2-w/2, y=touch?rc.bottom+14:rc.top-h-10;
+  if(y<8)y=rc.bottom+14;
   ulpop.style.left=Math.min(Math.max(8,x),innerWidth-w-8)+"px";
   ulpop.style.top=y+"px";
 }
-function toggleUl(){
+let ulLast=0;                                      /* 最後に使った色（⌘Uはこの色） */
+function setUl(c){                                 /* c＝色の番号／"x"＝消す */
   const sel=ulSel();
   if(!sel)return;
-  let l=ulMerge(ulNow());
-  if(ulCovered(sel)){                              /* もう線のある所＝そこだけ線を抜く */
-    const o=[];
-    l.forEach(p=>{
-      if(p[1]<=sel.a||p[0]>=sel.b){o.push(p);return;}
-      if(p[0]<sel.a)o.push([p[0],sel.a]);
-      if(p[1]>sel.b)o.push([sel.b,p[1]]);
-    });
-    l=o;
-  }else l=ulMerge(l.concat([[sel.a,sel.b]]));
-  ed.ul=ulRanges(ed.t,l);
+  let l=ulCut(ulNow(),sel.a,sel.b);                /* 選んだ所はいったん抜いて、新しい色で引き直す */
+  if(c!=="x"){ulLast=c|0;l.push([sel.a,sel.b,ulLast]);}
+  ed.ul=ulRanges(ed.t,ulMerge(l));
   paintUl();commitEd();saveSoon();showUlPop();
 }
-function ulpopAct(e){e.preventDefault();e.stopPropagation();toggleUl();}   /* 押しても選択と入力を手放さない（編集バーと同じやり方） */
+function toggleUl(){                               /* ⌘U：線が無ければ引く、ぜんぶ線なら消す */
+  const sel=ulSel();
+  if(!sel)return;
+  setUl(ulMerge(ulNow().map(p=>[p[0],p[1]])).some(p=>p[0]<=sel.a&&p[1]>=sel.b)?"x":ulLast);
+}
+function ulpopAct(e){                              /* 押しても選択と入力を手放さない（編集バーと同じやり方） */
+  e.preventDefault();e.stopPropagation();
+  const b=e.target.closest("[data-c]");
+  if(b)setUl(b.dataset.c==="x"?"x":+b.dataset.c);
+}
 ulpop.addEventListener("mousedown",ulpopAct);
 ulpop.addEventListener("touchstart",e=>e.preventDefault(),{passive:false});
 ulpop.addEventListener("touchend",ulpopAct,{passive:false});
@@ -2729,7 +2755,7 @@ document.addEventListener("pointerdown",e=>{
     if(!edbar.classList.contains("open")){renderEdbar();edbar.classList.add("open");placeEdbar();}
     return;
   }
-  if(edbar.contains(tg)||tg===ulpop)return;
+  if(edbar.contains(tg)||ulpop.contains(tg))return;
   if(tg.closest&&(tg.closest("#roleRow .rolebtn")||tg.closest(".grow")))return;
   endEdit();
 },true);
