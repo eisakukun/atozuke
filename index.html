@@ -274,6 +274,17 @@
     border-radius:999px;padding:0 7px;margin-right:3px}
   #stColors{margin-top:7px}
   #stColors .c{width:22px;height:22px;}
+  /* 👑 王様の札：頭に王冠がのる・太い二重の枠・文字も大きい。色だけでなく形で「これが一番」と分かる */
+  .node.king{width:264px;padding-top:15px;padding-bottom:14px;border-radius:16px 16px 8px 8px;
+    border:2.5px solid var(--c,var(--gold));border-left-width:2.5px;
+    box-shadow:0 0 0 3px #07070d,0 0 0 4.5px #ffd24a,0 0 46px -4px var(--c,var(--gold)),0 10px 24px rgba(0,0,0,.65);}
+  .node.king.selected{box-shadow:0 0 0 3px #07070d,0 0 0 5.5px #ffe27a,0 0 60px -2px var(--c,var(--gold)),0 10px 24px rgba(0,0,0,.65);}
+  .node.king::before{content:"";position:absolute;left:50%;bottom:100%;width:74px;height:40px;margin:0 0 2px -37px;
+    pointer-events:none;filter:drop-shadow(0 0 7px rgba(255,200,60,.75));
+    background:no-repeat center/contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 74 40'%3E%3Cpath d='M5 36 L2 11 L20 23 L37 3 L54 23 L72 11 L69 36 Z' fill='%23ffd24a' stroke='%23fff3b0' stroke-width='1.5' stroke-linejoin='round'/%3E%3Crect x='5' y='30' width='64' height='7' rx='2' fill='%23e0a200'/%3E%3Ccircle cx='2.5' cy='10' r='2.5' fill='%23fff3b0'/%3E%3Ccircle cx='37' cy='3' r='3' fill='%23fff3b0'/%3E%3Ccircle cx='71.500' cy='10' r='2.5' fill='%23fff3b0'/%3E%3Ccircle cx='37' cy='33.500' r='2.600' fill='%23ff3b5c'/%3E%3Ccircle cx='20' cy='33.500' r='2' fill='%2300e5ff'/%3E%3Ccircle cx='54' cy='33.500' r='2' fill='%2300e5ff'/%3E%3C/svg%3E");}
+  .node.king .head{font-size:11.5px;font-weight:800;letter-spacing:.16em;color:#ffd24a;}
+  .node.king .txt{font-size:17px;font-weight:800;line-height:1.45;}
+  .node.king .grow.t{top:-58px;}                    /* 上の＋は王冠のさらに上へ */
   /* ☑ チェックの札：やることにして、押すと済みになる */
   .node.haschk{padding-left:48px;}
   .node.haschk .grow.l{left:-24px;}                 /* 左の＋は、四角と重ならない所へ逃がす */
@@ -610,6 +621,10 @@
       <input type="checkbox" id="rfFill" style="width:15px;height:15px;accent-color:#ff3b3b">
       <span style="font-size:11.5px">札そのものを、この色で薄く塗る（「最重要」のように、ひと目で目立たせたい時）</span>
     </label>
+    <label style="display:flex;align-items:center;gap:7px;margin-top:8px;cursor:pointer;text-transform:none;letter-spacing:0">
+      <input type="checkbox" id="rfKing" style="width:15px;height:15px;accent-color:#ffd24a">
+      <span style="font-size:11.5px">👑 王様の形にする（王冠がのって、枠が太く、文字も大きくなる）</span>
+    </label>
     <div class="acts"><button id="rfCancel">やめる</button><button id="rfSave" class="primary">保存</button></div>
   </div>
 </div>
@@ -703,7 +718,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.45.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.46.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -1521,6 +1536,7 @@ function render(){
     el.style.background=(rr&&rr.fill)?
       "linear-gradient(170deg,"+tint(rr.color,.28)+" 0%,"+tint(rr.color,.13)+" 100%)":"";
     el.classList.toggle("plain",!r);
+    el.classList.toggle("king",!!(rr&&rr.king));
     el.classList.toggle("start",sid.has(id));
     el.style.setProperty("--st",sid.has(id)?startColor(n):"");
     el.classList.toggle("mir",!!n.sync);
@@ -3130,6 +3146,7 @@ function openRoleForm(r,fromReview){
   $("rfName").value=r?r.name:"";
   $("rfHint").value=r?(r.hint||""):"";
   $("rfFill").checked=!!(r&&r.fill);
+  $("rfKing").checked=!!(r&&r.king);
   rfIcon=r?r.icon:"●"; $("rfIcon").value=rfIcon;
   rfCat=0;
   for(let i=0;i<EMOJI_CATS.length;i++){if(EMOJI_CATS[i].e.indexOf(rfIcon)>=0){rfCat=i;break;}}
@@ -3145,7 +3162,7 @@ function saveRoleForm(){
   if(!name){alert("名前を入れてください");return;}
   const v={icon:$("rfIcon").value.trim()||rfIcon||"●",name:name,
     color:$("rfColor").value.trim()||rfColor,hint:$("rfHint").value.trim(),
-    fill:$("rfFill").checked};
+    fill:$("rfFill").checked,king:$("rfKing").checked};
   let id=rfEditing;
   if(rfEditing){const r=db.roles.find(x=>x.id===rfEditing);if(r)Object.assign(r,v);}
   else{id="r"+Date.now().toString(36);db.roles.push({id:id,...v});}
@@ -4054,6 +4071,7 @@ function normalize(){
   if(!Array.isArray(db.roles)||!db.roles.length)db.roles=SEED_ROLES.map(r=>({...r}));
   db.roles.forEach(r=>{                    /* 「最重要」は、言われなくても塗る（一度だけ・以後は本人の設定） */
     if(r.fill===undefined)r.fill=/最重要|いちばん大事|一番大事/.test(r.name||"");
+    if(r.king===undefined)r.king=/最重要|いちばん大事|一番大事/.test(r.name||"");   /* 形も王様に（同じく一度だけ） */
   });
   /* あとから増やした初期の種類を、前から使っている人にも1度だけ届ける
      （自分で消した種類が復活しないように、版で1回きり） */
