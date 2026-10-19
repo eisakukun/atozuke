@@ -324,6 +324,23 @@
   .node.cancel{border-color:#ff5b7a;}
   .node.cancel .txt{opacity:.72;}
   @media (pointer:coarse){ .node.haschk{padding-left:54px;} .node .ck{width:34px;height:34px;font-size:22px;} }
+  /* ♟ ゲーム感覚チェック：義務にしない。赤くしない・数を出さない・ふだんは小さく畳んで黙っている */
+  .node .gk{margin-top:7px;font-size:11px;line-height:1.45;color:#8d97b8;cursor:default;user-select:none;-webkit-user-select:none;}
+  .node .gk .gkh{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;}
+  .node .gk .gkh .gkt{cursor:pointer;opacity:.55;padding:2px 0;}
+  .node .gk .gkh .gkt:hover{opacity:.9;}
+  .node .gk .gkh .sp{flex:1;}
+  .node .gk .gkh .gkx{cursor:pointer;opacity:.45;padding:1px 6px;border-radius:4px;}
+  .node .gk .gkh .gkx:hover{opacity:.9;background:rgba(160,180,255,.12);}
+  .node .gk .gks{margin:6px 0 2px;font-size:9.5px;font-family:var(--mono);letter-spacing:.08em;opacity:.6;}
+  .node .gk .gki{display:flex;gap:7px;align-items:flex-start;padding:3px 2px;border-radius:4px;cursor:pointer;}
+  .node .gk .gki:hover{background:rgba(160,180,255,.07);}
+  .node .gk .gkb{flex:none;width:14px;height:14px;margin-top:1px;border:1px solid rgba(160,180,255,.45);border-radius:4px;
+    display:flex;align-items:center;justify-content:center;font-size:10px;color:#0b0b16;}
+  .node .gk .gki.on .gkb{background:#8fb4ff;border-color:#8fb4ff;}
+  .node .gk .gki.on .gkl{color:#c4cde6;}
+  .node .gk .gkdone{margin-top:7px;font-size:11px;color:#aab6d8;opacity:.8;}
+  @media (pointer:coarse){ .node .gk .gki{padding:6px 2px;} .node .gk .gkb{width:18px;height:18px;} .node .gk .gkh .gkx{padding:5px 9px;} }
   .node .cnt{font-family:var(--mono);font-size:9px;color:#7cff9b;opacity:.85;margin-left:2px;}
   .node.done{border-left-color:#7cff9b;}
   .node .head{display:flex;align-items:center;gap:5px;font-size:9.5px;color:var(--c,var(--plain));
@@ -590,6 +607,7 @@
       <button id="mirBtn">🔗 ほかの紙とつなぐ</button>
       <button id="chkBtn">☑ チェックの札にする</button>
       <button id="cancelBtn">✕ キャンセルにする</button>
+      <button id="gkBtn">♟ ゲーム感覚チェック</button>
       <button id="startBtn">▶ スタートにする</button>
       <button id="cutBtn">親から切る</button>
       <button id="linkBtn2">⌁ つなぐ</button>
@@ -646,6 +664,12 @@
       <span style="font-size:11.5px">⚡ カクカクの枠にする（四角のまわりがギザギザになって、形で目立つ）</span>
     </label>
     <div class="acts"><button id="rfCancel">やめる</button><button id="rfSave" class="primary">保存</button></div>
+  </div>
+  <div id="gkSet">
+    <h2 style="margin-top:22px">♟ ゲーム感覚チェック
+      <span class="sp"><button id="gkReset" title="はじめの5つに戻す">はじめに戻す</button></span></h2>
+    <div class="subtle">札を右クリック →「ゲーム感覚チェックを追加」で付く項目。ここで変えると、次に付けるチェックから新しい文言になる（もう付いているものはそのまま）。</div>
+    <div id="gkList"></div>
   </div>
 </div>
 
@@ -738,7 +762,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.48.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.49.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -869,7 +893,7 @@ function mergeRoles(remote,rtomb){
   });
   if(out.length)db.roles=out;
 }
-function metaNow(){return JSON.stringify({order:db.order,roles:db.roles,rolesVer:db.rolesVer,roleTomb:db.roleTomb||{}});}
+function metaNow(){return JSON.stringify({order:db.order,roles:db.roles,rolesVer:db.rolesVer,roleTomb:db.roleTomb||{},gkItems:db.gkItems||null});}
 function save(touch){
   if(quiet)return;
   clearTimeout(saveTimer);saveTimer=0;
@@ -942,6 +966,8 @@ function openSubMenu(nodeId){
     '<button data-a="vscope">'+((viewScope&&viewScope.node===nodeId)?
       "🔭 この札から下の俯瞰をやめる":"🔭 この札から下を俯瞰する")+'</button>'+
     '<button class="gold" data-a="mir">'+(n.sync?"🔗 つなぎを見る・もう1枚足す":"🔗 ほかの紙の札とつなぐ")+'<kbd>⏎</kbd></button>'+
+    (n.gk?'<button data-a="gkoff">♟ ゲーム感覚チェックを外す</button>':
+      '<button data-a="gk">♟ ゲーム感覚チェックを追加<span class="d">項目の文言は ⚙ で変えられる</span></button>')+
     '<button data-a="x">やめる<kbd>esc</kbd></button>';
   box._node=nodeId;box._kind="sub";
   const r=el.getBoundingClientRect();
@@ -982,6 +1008,8 @@ function subAct(a){
   const id=$("subMenu")._node;
   closeSubMenu();
   if(a==="mir"){select(id);openMirPicker();}
+  else if(a==="gk")addGk(id);
+  else if(a==="gkoff")dropGk(id);
   else if(a==="vscope"){
     if(viewScope&&viewScope.node===id){setViewScope(null);toast("🔭 やめた（全体に戻した）");}
     else{select(id);setViewScope(id);}
@@ -1207,15 +1235,16 @@ function twinsOf(syncId,skipMap,skipNode){
   });
   return out;
 }
-const MIR_FIELDS=["text","role","chk","cancel","memo","tags"];
+const MIR_FIELDS=["text","role","chk","cancel","memo","tags","gk"];
 function copyFields(src,dst){
   let moved=false;
   MIR_FIELDS.forEach(k=>{
-    const v=(k==="tags")?JSON.stringify(src[k]||[]):src[k];
-    const w=(k==="tags")?JSON.stringify(dst[k]||[]):dst[k];
+    const v=(k==="tags")?JSON.stringify(src[k]||[]):(k==="gk")?JSON.stringify(src[k]||null):src[k];
+    const w=(k==="tags")?JSON.stringify(dst[k]||[]):(k==="gk")?JSON.stringify(dst[k]||null):dst[k];
     if(v===w)return;
     if(k==="tags")dst.tags=(src.tags||[]).slice();
     else if(src[k]===undefined)delete dst[k];
+    else if(k==="gk")dst.gk=JSON.parse(v);
     else dst[k]=src[k];
     moved=true;
   });
@@ -1489,6 +1518,65 @@ function toggleChk(id){                           /* まだ ⇄ 済み */
   spreadSync(id);
   render();openInsp();save();
 }
+/* ===== ♟ ゲーム感覚チェック =====
+   決めごと（義務・ノルマにしない）：赤くしない／警告・通知しない／「3/5」のような数や率を出さない／
+   ふだんは小さく畳んで黙っている（開くのは本人だけ）／外す・チェックを戻すは1回押すだけ。
+   文言は ⚙ の db.gkItems。付けた時点の文言を札に写す（あとで⚙を変えても、もう付いているものは変わらない） */
+const GK_SECS=["打つ前","打った後"];
+const GK_SEED=[
+  {sec:0,t:"分からなさ：結果がどうなるか、自分でも読めない？"},
+  {sec:0,t:"選択：誰かに言われたからじゃなく、自分で選んだ手？"},
+  {sec:0,t:"盤面：打った手の結果が返ってくる場所に打ってる？"},
+  {sec:1,t:"手応え：自分に何かが返ってきた？"},
+  {sec:1,t:"次の手：その結果を見て、次に打ちたい手が浮かんだ？"}
+];
+const GK_DONE="今、ゲーム感覚で生きてる";
+const gkOpen=new Set();                           /* 開いている札（保存しない＝読み直すと黙って畳まれる） */
+function gkItems(){
+  if(!Array.isArray(db.gkItems))db.gkItems=GK_SEED.map(x=>({...x}));
+  return db.gkItems;
+}
+function addGk(id){
+  const n=state.nodes[id];if(!n||n.gk)return;
+  const items=gkItems().filter(x=>(x.t||"").trim()).map(x=>({sec:x.sec?1:0,t:x.t.trim(),c:0}));
+  if(!items.length){toast("♟ ⚙ に項目がひとつも無い");return;}
+  snapshot();
+  n.gk={items};
+  gkOpen.add(id);
+  spreadSync(id);
+  render();save();
+}
+function dropGk(id){
+  const n=state.nodes[id];if(!n||!n.gk)return;
+  snapshot();
+  delete n.gk;gkOpen.delete(id);
+  spreadSync(id);
+  render();save();
+  toast("♟ 外した（⌘Zで戻せる）");
+}
+function toggleGk(id,i){
+  const n=state.nodes[id],it=n&&n.gk&&n.gk.items[i];if(!it)return;
+  snapshot();
+  it.c=it.c?0:1;
+  spreadSync(id);
+  render();save();
+}
+function gkHtml(id,n){
+  const g=n.gk;
+  if(!gkOpen.has(id))
+    return '<div class="gkh"><span class="gkt" data-gk="open" title="ひらく">♟ ゲーム感覚 ▸</span></div>';
+  let h='<div class="gkh"><span class="gkt" data-gk="close" title="たたむ">♟ ゲーム感覚 ▾</span><span class="sp"></span>'+
+    '<span class="gkx" data-gk="drop" title="このチェックを外す（⌘Zで戻せる）">外す</span></div>';
+  GK_SECS.forEach((s,si)=>{
+    const rows=g.items.map((it,i)=>({it,i})).filter(o=>(o.it.sec?1:0)===si);
+    if(!rows.length)return;
+    h+='<div class="gks">'+esc(s)+'</div>'+rows.map(o=>
+      '<div class="gki'+(o.it.c?" on":"")+'" data-gk="t" data-i="'+o.i+'"><span class="gkb">'+(o.it.c?"✓":"")+
+      '</span><span class="gkl">'+esc(o.it.t)+'</span></div>').join("");
+  });
+  if(g.items.length&&g.items.every(it=>it.c))h+='<div class="gkdone">'+esc(GK_DONE)+'</div>';
+  return h;
+}
 const START_COLOR="#b6ff3a";
 function startColor(n){return (n&&n.sc)||START_COLOR;}
 function setStartColor(id,c){
@@ -1590,6 +1678,12 @@ function render(){
     el.querySelector(".chips").innerHTML=(n.tags||[]).map(t=>'<span class="chip">#'+esc(t)+'</span>').join("");
     const memo=el.querySelector(".memo");
     memo.textContent=n.memo||""; memo.style.display=n.memo?"":"none";
+    let gk=el.querySelector(":scope > .gk");
+    if(!n.gk){ if(gk)gk.remove(); gkOpen.delete(id); }
+    else{
+      if(!gk){gk=document.createElement("div");gk.className="gk";memo.after(gk);}
+      const h=gkHtml(id,n); if(gk._h!==h){gk.innerHTML=h;gk._h=h;}
+    }
   });
   Object.values(existing).forEach(el=>el.remove());
   paintUl();
@@ -2308,9 +2402,17 @@ function wireNode(el){
     if(ed)commitEd();
     select(el.dataset.id);openSubMenu(el.dataset.id);
   });
-  el.addEventListener("dblclick",e=>{e.stopPropagation();if(lastPtype==="mouse")startEdit(el);});
-  el.addEventListener("pointerdown",e=>{           /* ☑ の四角の上では、動かさない・書き始めない */
-    if(e.target.closest(".ck"))e.stopPropagation();  /* preventDefaultはしない＝clickは来る */
+  el.addEventListener("dblclick",e=>{e.stopPropagation();if(e.target.closest(".gk"))return;if(lastPtype==="mouse")startEdit(el);});
+  el.addEventListener("pointerdown",e=>{           /* ☑ の四角・♟ チェックの上では、動かさない・書き始めない */
+    if(e.target.closest(".ck,.gk"))e.stopPropagation();  /* preventDefaultはしない＝clickは来る */
+  },true);
+  el.addEventListener("click",e=>{                  /* ♟ ひらく・たたむ・項目を押す・外す */
+    const t=e.target.closest(".gk [data-gk]");if(!t)return;
+    e.stopPropagation();e.preventDefault();
+    const id=el.dataset.id,a=t.dataset.gk;
+    if(a==="t")toggleGk(id,+t.dataset.i);
+    else if(a==="drop")dropGk(id);
+    else{ if(a==="open")gkOpen.add(id); else gkOpen.delete(id); render(); }
   },true);
   el.addEventListener("click",e=>{                  /* ☑ を押した＝済み／まだ */
     if(!e.target.closest(".ck"))return;
@@ -3001,6 +3103,7 @@ function openInsp(){
   cb.textContent=(n.chk===undefined)?"☑ チェックの札にする":
     "☑ チェックを外す（今 "+(n.chk===1?"済み":"まだ")+"）";
   $("cancelBtn").textContent=n.cancel?"✕ キャンセルを外す":"✕ キャンセルにする";
+  $("gkBtn").textContent=n.gk?"♟ ゲーム感覚チェックを外す":"♟ ゲーム感覚チェックを追加";
   const sb=$("startBtn"),isS=startIds().has(n.id);
   sb.textContent=isS?(n.start?"▶ スタートをやめる":"▶ これがスタート"):"▶ スタートにもする";
   sb.disabled=isS&&!n.start;
@@ -3247,7 +3350,34 @@ $("revEnd").onclick=()=>{endReview();render();};
 
 /* ===== ⚙ 意味の種類を編集 ===== */
 let rfEditing=null;
-function openRoles(){closeRoleForm();renderRoleList();openModal("roles");}
+function openRoles(){closeRoleForm();renderRoleList();renderGkSet();openModal("roles");}
+function renderGkSet(){                      /* ♟ ゲーム感覚チェックの文言（打つ前／打った後） */
+  const items=gkItems();
+  $("gkList").innerHTML=GK_SECS.map((s,si)=>
+    '<div class="cap" style="margin-top:10px">'+esc(s)+'</div>'+
+    items.map((x,i)=>({x,i})).filter(o=>(o.x.sec?1:0)===si).map(o=>
+      '<div class="rrow"><input type="text" data-gi="'+o.i+'" value="'+esc(o.x.t)+'" style="flex:1;min-width:0">'+
+      '<button data-gd="'+o.i+'" title="この項目を消す">✕</button></div>').join("")+
+    '<div class="rrow"><button data-ga="'+si+'">＋足す</button></div>').join("");
+}
+$("gkList").addEventListener("input",e=>{
+  const i=e.target.dataset.gi;if(i===undefined)return;
+  const x=gkItems()[+i];if(x){x.t=e.target.value;saveSoon();}
+});
+$("gkList").addEventListener("click",e=>{
+  const d=e.target.closest("[data-gd]"),a=e.target.closest("[data-ga]");
+  if(d){gkItems().splice(+d.dataset.gd,1);renderGkSet();save();}
+  else if(a){
+    const items=gkItems(),sec=+a.dataset.ga;
+    let at=items.length;for(let j=items.length-1;j>=0;j--){if((items[j].sec?1:0)<=sec){at=j+1;break;}if(j===0)at=0;}
+    items.splice(at,0,{sec,t:""});renderGkSet();save();
+    const inp=$("gkList").querySelector('[data-gi="'+at+'"]');if(inp)inp.focus();
+  }
+});
+$("gkReset").onclick=()=>{
+  if(!confirm("ゲーム感覚チェックの項目を、はじめの5つに戻す？（もう札に付いているものは変わらない）"))return;
+  db.gkItems=GK_SEED.map(x=>({...x}));renderGkSet();save();
+};
 function renderRoleList(){
   $("roleList").innerHTML=db.roles.map(r=>{
     const used=Object.values(state.nodes).filter(n=>n.role===r.id).length;
@@ -3981,7 +4111,7 @@ function syncDot(ok){
 }
 function syPayload(){
   return {code:syCode,maps:db.maps,tomb:db.tomb||{},
-          meta:{order:db.order,roles:db.roles,rolesVer:db.rolesVer,roleTomb:db.roleTomb||{},u:db.metaU||0}};
+          meta:{order:db.order,roles:db.roles,rolesVer:db.rolesVer,roleTomb:db.roleTomb||{},gkItems:db.gkItems,u:db.metaU||0}};
 }
 function syncSoon(){
   if(!syncOn())return;
@@ -4036,6 +4166,7 @@ function takeIn(res){
   if(meta&&(Number(meta.u)||0)>(db.metaU||0)){
     if(Array.isArray(meta.roles)&&meta.roles.length)mergeRoles(meta.roles,meta.roleTomb);
     if(meta.rolesVer)db.rolesVer=meta.rolesVer;
+    if(Array.isArray(meta.gkItems))db.gkItems=meta.gkItems;      /* ♟ の文言（⚙）も揃える */
     if(Array.isArray(meta.order)){
       const o=[];meta.order.forEach(id=>{if(db.maps[id]&&o.indexOf(id)<0)o.push(id);});
       db.order=o;
@@ -4134,6 +4265,8 @@ $("mirClose").onclick=closeModals;
 $("pairStop").onclick=()=>{stopPair();toast("やめた");};
 $("vsStop").onclick=()=>{setViewScope(null);toast("🔭 やめた（全体に戻した）");};
 $("cancelBtn").onclick=()=>{if(state.selected)toggleCancel(state.selected);};
+$("gkBtn").onclick=()=>{const id=state.selected;if(!id||!state.nodes[id])return;
+  if(state.nodes[id].gk)dropGk(id);else addGk(id);openInsp();};
 document.addEventListener("keydown",e=>{
   if(e.key==="Shift"&&!ed&&state.selected&&!document.querySelector(".modal.open"))
     document.body.classList.add("shiftlink");
@@ -4251,6 +4384,9 @@ function normalize(){
     if(!Array.isArray(m.frames))m.frames=[];
     if(!Array.isArray(m.notes))m.notes=[];
     if(!Array.isArray(m.tools))m.tools=[];
+    Object.values(m.nodes||{}).forEach(n=>{       /* ♟ 形が崩れたチェックは外す */
+      if(n.gk&&!(typeof n.gk==="object"&&Array.isArray(n.gk.items)&&n.gk.items.length))delete n.gk;
+    });
     m.frames.forEach(f=>{
       f.ids=(Array.isArray(f.ids)?f.ids:[]).filter(id=>m.nodes[id]);
       if(!f.root||!m.nodes[f.root])f.root=f.ids[0];
