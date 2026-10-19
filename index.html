@@ -536,6 +536,7 @@
   <button id="linkBtn" title="そことそこつながるやん線を引く（⇧＋相手の札をクリックでも同じ。外すのは ⌥⇧クリック）">⌁<span class="lbl"> つなぐ</span></button>
   <button id="frameBtn" title="選んだ札とその子ぜんぶを枠で囲う（⌘クリックでも同じ）">▢<span class="lbl"> 枠</span></button>
   <button id="aiBtn" class="primary">🤖 <span class="lbl">AIに渡す</span></button>
+  <button id="mayoiBtn" class="gold" title="迷い地図（アレかコレか）の枠を紙の真ん中に置く。何もない所の右クリックでも置ける">⚖<span class="lbl"> 迷い</span></button>
   <button id="rolesBtn">⚙<span class="lbl"> 意味の種類</span></button>
   <button id="layV" title="縦に並べ直す">↕</button>
   <button id="layH" title="横に並べ直す">↔</button>
@@ -754,6 +755,202 @@
 </div>
 <div id="sabProbe" style="position:fixed;left:0;bottom:0;width:0;height:env(safe-area-inset-bottom,0px);visibility:hidden;pointer-events:none"></div>
 
+<!-- ===== ⚖ 迷い地図（アレかコレか）=====
+     札とは別の画面。紙ごとに state.mayoi に持つ（＝保存・控え・☁同期にそのまま乗る）。
+     円の中にマインドマップの機能は付けない。理由・答え・バックアップだけ「札につなぐ」ができる。
+     元は ~/mayoi（単体版）。 -->
+<style>
+  #myo{position:fixed;inset:0;z-index:1000;display:none;flex-direction:column;background:#07070d;color:var(--text);
+    --green:#7dff9a;--pa:#00e5ff;--pb:#ffb200;padding-top:var(--sat,0px)}
+  #myo.open{display:flex}
+  /* 右上の角を引くと小さな窓になり、後ろの紙（マインドマップ）が見える。窓のまま紙も触れる */
+  #myo.win{inset:auto;border:1.5px solid #ffb200;border-radius:10px;box-shadow:0 0 0 1px rgba(0,0,0,.6),0 18px 60px -10px #000,0 0 30px -10px #ffb200;overflow:hidden;padding-top:0}
+  #myo.win .mybar{cursor:move}
+  #myo.win .myside{width:min(430px,46%)}
+  #myo .myrs{position:absolute;top:0;right:0;width:30px;height:30px;z-index:60;cursor:nesw-resize;touch-action:none;
+    background:linear-gradient(225deg,#ffb200 0 9px,transparent 9px),linear-gradient(225deg,transparent 13px,rgba(255,178,0,.55) 13px 15px,transparent 15px);
+    border-top-right-radius:9px;filter:drop-shadow(0 0 6px #ffb200)}
+  #myo.tiny{opacity:.55}
+  #myo .myrs:hover{background:linear-gradient(225deg,#fff 0 11px,transparent 11px),linear-gradient(225deg,transparent 15px,rgba(255,255,255,.7) 15px 17px,transparent 17px)}
+  #myo .mybar{padding-right:36px}
+  #myo .mybar{display:flex;gap:5px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line);
+    background:rgba(10,10,20,.96);overflow-x:auto;flex:none}
+  #myo .myttl{font-family:var(--mono);font-weight:700;font-size:12.5px;letter-spacing:.12em;color:var(--mag);
+    margin-right:auto;white-space:nowrap;text-shadow:0 0 10px rgba(255,46,151,.7)}
+  #myo .myttl small{color:#4d5878;font-weight:400;letter-spacing:.04em;margin-left:6px}
+  #myo .mytabs{display:flex;gap:4px;align-items:center;padding:5px 8px;overflow-x:auto;border-bottom:1px solid var(--line);flex:none}
+  #myo .mytab{display:flex;align-items:center;gap:6px;padding:4px 9px;border:1px solid var(--line);border-radius:4px;font-size:12px;
+    cursor:pointer;color:var(--muted,#7a86a8);white-space:nowrap;background:#0c0c17;font-family:var(--mono);flex:none;max-width:200px}
+  #myo .mytab .nm{overflow:hidden;text-overflow:ellipsis}
+  #myo .mytab.on{color:#fff;border-color:var(--gold);box-shadow:0 0 14px -5px var(--gold);background:#1a1206}
+  #myo .mytab .x{opacity:.4;font-size:11px}
+  #myo .mytab .x:hover{opacity:1;color:#ff3b3b}
+  #myo .mytabs button{padding:4px 9px;font-size:11.5px}
+  #myo .mywrap{flex:1;display:flex;min-height:0}
+  #myo .myside{width:430px;flex:none;overflow-y:auto;border-right:1px solid var(--line);padding-bottom:calc(40px + var(--sab,0px))}
+  #myo.fold .myside{display:none}
+  #myo .sec{border:1px solid var(--line);background:#0f0f1a;border-radius:6px;padding:12px;margin:10px}
+  #myo .sec h2{font-family:var(--mono);font-size:13px;letter-spacing:.12em;margin:0 0 8px;font-weight:700;color:var(--sc,var(--cyan));
+    display:flex;align-items:center;gap:6px}
+  #myo .sec h2 small{font-family:-apple-system,"Hiragino Sans",sans-serif;font-weight:400;letter-spacing:0;color:#7a86a8;font-size:11px;flex:1}
+  #myo .sec textarea.big{width:100%;resize:none;overflow:hidden;display:block;line-height:1.45}
+  #myo .sec.worry{border-color:var(--mag);border-width:2px;padding:14px 14px 16px;
+    background:linear-gradient(180deg,#1c0a17,#0f0f1a);box-shadow:0 0 34px -10px var(--mag),inset 0 0 30px -18px var(--mag)}
+  #myo .sec.worry h2{color:var(--mag);font-size:21px;text-shadow:0 0 12px rgba(255,46,151,.7)}
+  #my-worry{font-size:20px;font-weight:700;border-color:rgba(255,46,151,.45);background:#120712}
+  #myo .sec.opt{border-color:color-mix(in srgb,var(--sc) 45%,var(--line));box-shadow:0 0 22px -12px var(--sc)}
+  #myo .sec.opt .optin{font-size:17px;font-weight:700;color:#fff;border-color:color-mix(in srgb,var(--sc) 50%,var(--line))}
+  #myo .rlabel{font-size:11px;color:#7a86a8;margin:10px 0 2px}
+  #myo .sec.ans{--sc:var(--green);border-color:rgba(125,255,154,.45);box-shadow:0 0 22px -12px var(--green)}
+  #my-answer{font-size:16px;font-weight:700;border-color:rgba(125,255,154,.4)}
+  #myo .sec.bk{--sc:#b48cff}
+  #myo .adds{display:flex;gap:6px;margin-top:6px}
+  #myo .adds button{font-size:11.5px;padding:5px 9px;font-family:inherit}
+  #myo .row{display:flex;gap:6px;align-items:flex-start;margin:6px 0;border-left:3px solid var(--pc);padding-left:6px}
+  #myo .row.sel{background:rgba(255,255,255,.05)}
+  #myo .row textarea{flex:1;min-width:0;resize:none;overflow:hidden;line-height:1.4;display:block;font-size:var(--fs);font-weight:var(--fw)}
+  #myo .pri{display:flex;flex-direction:column;align-items:center;gap:3px;padding-top:6px;flex:none}
+  #myo .pri .dots{display:flex;gap:3px}
+  #myo .pri button{width:14px;height:14px;padding:0;border-radius:50%;background:#0b0b16;border:1px solid var(--pc);box-shadow:none}
+  #myo .pri button.on{background:var(--pc);box-shadow:0 0 7px var(--pc)}
+  #myo .pri .pt{font-size:10px;color:var(--pc);font-family:var(--mono)}
+  #myo button.x{padding:6px 6px;opacity:.35;border-color:transparent;background:none;box-shadow:none}
+  #myo button.x:hover{opacity:1;color:#ff3b3b}
+  #myo button.lk{padding:5px 6px;font-size:12px;opacity:.55;background:none;border-color:transparent;box-shadow:none}
+  #myo button.lk:hover{opacity:1;border-color:var(--gold)}
+  #myo button.lk.on{opacity:1;color:var(--gold);border-color:rgba(255,178,0,.6);box-shadow:0 0 10px -3px var(--gold)}
+  #myo .mystage{position:relative;flex:1;overflow:hidden;touch-action:none;background-color:#06060c;
+    background-image:linear-gradient(rgba(0,229,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,255,.05) 1px,transparent 1px);
+    background-size:24px 24px}
+  #my-venn{position:absolute;inset:0;width:100%;height:100%;user-select:none;-webkit-user-select:none}
+  #my-venn text{font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif}
+  #my-venn [data-rid]{cursor:grab}
+  #my-venn [data-edit]{cursor:pointer}
+  #my-venn .pulse{animation:mypulse 1.6s ease-in-out infinite}
+  @keyframes mypulse{50%{opacity:.35}}
+  #my-venn .rg .ld{stroke-opacity:.35;stroke-width:1.2;transition:stroke-opacity .12s}
+  #my-venn .rg:hover .ld,#my-venn .rg.on .ld{stroke-opacity:1;stroke-width:2.2}
+  #my-venn .rg:hover .lt{fill:#fff;fill-opacity:1}
+  #myo .myhint{position:absolute;left:12px;bottom:calc(10px + var(--sab,0px));font-size:11px;color:#56628a;font-family:var(--mono);pointer-events:none;line-height:1.6}
+  #myo textarea.ie{position:absolute;z-index:20;resize:none;overflow:hidden;font-size:15px;line-height:1.4;
+    background:#0b0b16;border:1px solid var(--iec);box-shadow:0 0 18px -4px var(--iec);color:#fff}
+  #myo .mytoast{position:absolute;left:50%;bottom:calc(24px + var(--sab,0px));transform:translateX(-50%);background:#0d0d1c;border:1px solid var(--cyan);
+    color:#fff;padding:8px 14px;border-radius:6px;font-size:13px;z-index:90;box-shadow:0 0 20px -6px var(--cyan);opacity:0;transition:.2s;pointer-events:none}
+  #myo .mytoast.on{opacity:1}
+  #myo .mymenu{position:fixed;display:none;z-index:1100;background:#0d0d1c;border:1px solid var(--mag);border-radius:6px;padding:6px;
+    box-shadow:0 0 24px -6px var(--mag);min-width:230px}
+  #myo .mymenu .cq{font-size:11px;color:#7a86a8;margin:2px 6px 6px;max-width:280px;line-height:1.4;word-break:break-all}
+  #myo .mymenu .cq b{color:#fff}
+  #myo .mymenu button{display:block;width:100%;text-align:left;margin:2px 0;font-family:inherit;font-size:13px;border-color:color-mix(in srgb,var(--c,#7a86a8) 45%,var(--line))}
+  #myo .mymenu button:hover{border-color:var(--c,#fff);box-shadow:0 0 12px -3px var(--c,#fff)}
+  #myo .mymenu hr{border:none;border-top:1px solid var(--line);margin:5px 0}
+  #myo .myai{position:absolute;inset:0;background:rgba(0,0,0,.65);z-index:95;display:none;align-items:center;justify-content:center;padding:16px}
+  #myo .myai.open{display:flex}
+  #myo .myai .box{background:#0f0f1a;border:1px solid var(--mag);border-radius:8px;box-shadow:0 0 40px -10px var(--mag);
+    width:min(760px,100%);max-height:100%;display:flex;flex-direction:column;padding:14px;gap:10px}
+  #myo .myai .mh{display:flex;align-items:center;gap:10px}
+  #myo .myai .mh b{color:var(--mag);font-family:var(--mono);letter-spacing:.1em}
+  #myo .myai .mh span{font-size:12px;color:#7a86a8;flex:1}
+  #myo .myai .modes{display:flex;gap:6px;flex-wrap:wrap}
+  #myo .myai .modes button{font-family:inherit;font-size:12.5px;padding:8px 12px}
+  #my-aitext{width:100%;height:52vh;font-family:var(--mono);font-size:12px;line-height:1.55;resize:vertical}
+  #myo .myai .mf{display:flex;align-items:center;gap:8px}
+  #my-aiinfo{flex:1;font-size:12px;color:var(--green)}
+  #myo .mtog{display:none}
+  #myo .mtog button{border-radius:0}
+  #myo .mtog button:first-child{border-radius:4px 0 0 4px}
+  #myo .mtog button:last-child{border-radius:0 4px 4px 0}
+  /* 札の側：迷い地図につながっている札に付く ⚖ */
+  .node > .myb{position:absolute;top:-11px;right:-11px;width:22px;height:22px;border-radius:50%;background:#0b0b16;
+    border:1px solid #ffb200;color:#ffb200;font-size:12px;display:flex;align-items:center;justify-content:center;cursor:pointer;
+    box-shadow:0 0 10px -2px #ffb200;z-index:4}
+  .node > .myb:hover{background:#ffb200;color:#000}
+  #my-pick{position:fixed;left:50%;top:calc(96px + var(--sat,0px));transform:translateX(-50%);z-index:1050;display:none;align-items:center;gap:10px;
+    background:#1a1206;border:1px solid #ffb200;box-shadow:0 0 24px -6px #ffb200;color:#fff;padding:8px 12px;border-radius:6px;font-size:13px;max-width:92vw}
+  #my-pick.open{display:flex}
+  body.mypick .node{cursor:crosshair !important}
+  /* 紙の上に置く ⚖ 迷いの枠（小さいまま。ダブルクリックで大きく開いて書く） */
+  .myfr{position:absolute;width:300px;background:rgba(10,10,20,.92);border:1.5px solid #ffb200;border-radius:8px;
+    box-shadow:0 0 22px -8px #ffb200;cursor:grab;user-select:none;-webkit-user-select:none;touch-action:none;z-index:6}
+  .myfr.sel{box-shadow:0 0 0 2px #fff,0 0 26px -6px #ffb200}
+  .myfr .myfh{height:26px;display:flex;align-items:center;gap:6px;padding:0 9px;border-bottom:1px solid rgba(255,178,0,.35);
+    font-size:12px;color:#ffd47a;white-space:nowrap;overflow:hidden}
+  .myfr .myfh b{overflow:hidden;text-overflow:ellipsis;color:#fff;font-weight:700}
+  .myfr svg{display:block}
+  .myfr .myff{padding:5px 9px 7px;font-size:12px;color:#7dff9a;line-height:1.35;border-top:1px solid rgba(255,178,0,.2);min-height:26px}
+  .myfr .myff.empty{color:#56628a}
+  #my-fmenu{position:fixed;display:none;z-index:1100;background:#0d0d1c;border:1px solid #ffb200;border-radius:6px;padding:6px;
+    box-shadow:0 0 24px -6px #ffb200;min-width:200px}
+  #my-fmenu button{display:block;width:100%;text-align:left;margin:2px 0;font-family:inherit;font-size:13px}
+  @media (max-width:820px){
+    #myo .mtog{display:flex}
+    #myo .myfold{display:none}
+    #myo .myside{width:100%;border-right:none}
+    #myo[data-pane=fig] .myside{display:none !important}
+    #myo[data-pane=side] .mystage{display:none}
+    #myo .pri button{width:19px;height:19px}
+  }
+</style>
+<div id="myo" data-pane="side">
+  <div class="myrs" id="my-rs" title="引くと小さくなって、後ろの紙が見える（小さくしすぎると枠に戻る）。ダブルクリックで全画面／窓を切り替え"></div>
+  <div class="mybar">
+    <div class="myttl">⚖ 迷い地図<small>アレかコレか　この紙の迷い</small></div>
+    <div class="mtog"><button data-p="side">欄</button><button data-p="fig">円</button></div>
+    <button class="myfold" id="my-fold" title="左の欄を引っこめて円を大きく">◧ 欄をたたむ</button>
+    <button id="my-undo" title="取り消し ⌘Z">↩︎</button>
+    <button id="my-redo" title="やり直し ⇧⌘Z">↪︎</button>
+    <button id="my-load" title="単体の迷い地図（~/mayoi）で💾したJSONを取り込む">📂</button>
+    <button id="my-aibtn" class="primary">📋 AIに渡す</button>
+    <button id="my-close" class="gold" title="紙に戻る（esc）">✕ 紙に戻る</button>
+    <input type="file" id="my-file" accept=".json,application/json" hidden>
+  </div>
+  <div class="mytabs" id="my-tabs"></div>
+  <div class="mywrap">
+    <aside class="myside" id="my-side">
+      <section class="sec worry">
+        <h2>？ 悩み<small>文字を囲って右クリック → アレ／コレに入れられる</small></h2>
+        <textarea id="my-worry" class="big" rows="2" placeholder="いま何で迷ってる？"></textarea>
+      </section>
+      <section class="sec opt" style="--sc:var(--pa)">
+        <h2>◀ アレ<small>こっちを選ぶなら</small></h2>
+        <textarea id="my-optA" class="big optin" rows="1" placeholder="例：アカウントを別々に分ける"></textarea>
+        <div class="rlabel">アレ派の理由（●が多いほど円の真ん中に寄る　🔗＝札につなぐ）</div>
+        <div id="my-rsA"></div>
+        <div class="adds"><button data-add="a">＋ アレ派の理由</button></div>
+      </section>
+      <section class="sec opt" style="--sc:var(--pb)">
+        <h2>コレ ▶<small>こっちを選ぶなら</small></h2>
+        <textarea id="my-optB" class="big optin" rows="1" placeholder="例：1つのアカウントにまとめる"></textarea>
+        <div class="rlabel">コレ派の理由（●が多いほど円の真ん中に寄る　🔗＝札につなぐ）</div>
+        <div id="my-rsB"></div>
+        <div class="adds"><button data-add="b">＋ コレ派の理由</button></div>
+      </section>
+      <section class="sec ans">
+        <h2>◎ 答え<small>両方を見て、どうする？</small><button class="lk" data-lk="answer" title="札につなぐ">🔗</button></h2>
+        <textarea id="my-answer" class="big" rows="2" placeholder="例：1つのアカウントで、日常と漫画の2シリーズに分ける"></textarea>
+      </section>
+      <section class="sec bk">
+        <h2>↪ バックアップ<small>答えがうまくいかなかったら？</small><button class="lk" data-lk="backup" title="札につなぐ">🔗</button></h2>
+        <textarea id="my-backup" class="big" rows="2" placeholder="例：3か月伸びなければ、漫画だけ別アカウントに切り出す"></textarea>
+      </section>
+    </aside>
+    <main class="mystage" id="my-stage">
+      <svg id="my-venn" viewBox="0 0 1000 740" preserveAspectRatio="xMidYMin meet"></svg>
+      <div class="myhint">円の中をダブルクリック＝理由を書く　点や文字をドラッグ＝円の中心に近いほど優先度が高い　右クリック＝札につなぐ<br>真ん中の重なり・上の名前・下のバックアップはクリックで書ける　Delete＝選んだ理由を消す　1〜5＝優先度</div>
+      <div class="mytoast" id="my-toast"></div>
+    </main>
+  </div>
+  <div class="mymenu" id="my-menu"></div>
+  <div class="myai" id="my-ai"><div class="box">
+    <div class="mh"><b>📋 AIに渡す</b><span>頼み方を選ぶとコピーされます。Claude・Codex・ChatGPT などに貼るだけ</span><button id="my-aiclose">✕</button></div>
+    <div class="modes"></div>
+    <textarea id="my-aitext" spellcheck="false"></textarea>
+    <div class="mf"><span id="my-aiinfo"></span><button id="my-aicopy" class="primary">📋 この文をコピー</button></div>
+  </div></div>
+</div>
+<div id="my-pick"><span id="my-picktxt"></span><button id="my-pickx">やめる<kbd>esc</kbd></button></div>
+<div id="my-fmenu"></div>
+
 <script>
 (function(){
 "use strict";
@@ -762,7 +959,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.49.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.52.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -979,7 +1176,8 @@ function openSubMenu(nodeId){
 }
 const EMPTY_ACTS=[
   {k:"start",icon:"▶",name:"新しいスタート",d:"ここから別の始まりを書く"},
-  {k:"time", icon:"🕐",name:"一日の時間軸を置く",d:"縦に0時→24時。置いたら 🔑 でとめる"}
+  {k:"time", icon:"🕐",name:"一日の時間軸を置く",d:"縦に0時→24時。置いたら 🔑 でとめる"},
+  {k:"mayoi",icon:"⚖",name:"迷い地図を置く",d:"アレかコレかの小さな枠。ダブルクリックで開いて書く"}
 ];
 function openEmptyMenu(x,y){
   const box=$("subMenu"),locked=toolsOf().filter(t=>t.lock);
@@ -1001,6 +1199,7 @@ function emptyAct(k){
   closeSubMenu();
   if(k==="start")addFree(x,y,true);
   else if(k==="time")addTimeTool(x,y);
+  else if(k==="mayoi"){if(window.MY)MY.place(x,y);}
   else if(k==="unlock"){snapshot();toolsOf().forEach(t=>t.lock=false);renderTools();save();
     toast("🔑 ツールを動かせるようにした");}
 }
@@ -1694,6 +1893,7 @@ function render(){
   paintViewMarks();
   renderTagbar();
   renderTabs();
+  if(window.MY)MY.onHostRender();                  /* ⚖ 迷い地図につないだ札に印を付ける */
   save();
 }
 function tint(hex,a){                                   /* #rrggbb → 薄い色 */
@@ -2240,6 +2440,7 @@ function drawLinks(keep){
     }
   }
   svg.innerHTML=out+lk+vw+ghost;
+  if(window.MY)MY.drawLines();
 }
 function applyView(){
   world.style.transform="translate("+state.view.x+"px,"+state.view.y+"px) scale("+state.view.scale+")";
@@ -4441,6 +4642,713 @@ function normalize(){
     window.addEventListener("online",()=>syncNow(true));
   }
   metaSig=metaNow();
+})();
+window.MY=(()=>{
+  const q=s=>document.getElementById(s);
+  const root=q("myo"),svgV=q("my-venn"),stg=q("my-stage"),menu=q("my-menu");
+  const uidM=()=>"y"+Math.random().toString(36).slice(2,10);
+  const escM=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const short=(s,n)=>{s=String(s||"").replace(/\n+/g," ").trim();return s.length>n?s.slice(0,n)+"…":s};
+  const line=s=>String(s||"").trim().replace(/\n+/g," ／ ");
+  const grow=t=>{if(!t.offsetParent)return;t.style.height="auto";t.style.height=t.scrollHeight+2+"px"};
+  const dist=(p,o)=>Math.hypot(p.x-o.x,p.y-o.y);
+
+  /* ---- 円の形 ---- */
+  const R=260,CY=370,CA={x:331,y:CY},CB={x:669,y:CY};
+  const SIDE={a:{c:CA,col:"#00e5ff",dir:-1},b:{c:CB,col:"#ffb200",dir:1}};
+  const other=s=>s==="a"?"b":"a";
+  const STEP=0.18,radOf=p=>(5-p)*STEP+0.09,priOf=d=>Math.max(1,Math.min(5,5-Math.floor(d/STEP)));
+  const LENS_H=Math.sqrt(R*R-((CB.x-CA.x)/2)**2);
+  const PRI_C=["#3a4466","#5a6a90","#8fb4ff","#00e5ff","#ffb200","#ff2e97"];
+  const PRI_T=["","ゆるく","すこし","ふつう","大事","いちばん"];
+  const COLW=250;
+
+  /* ---- データ（いまの紙の state.mayoi） ---- */
+  const blank=()=>({id:uidM(),name:"",worry:"",a:"",b:"",reasons:[],answer:"",backup:"",links:{}});
+  function norm(d){const b=blank();for(const k in b) if(d[k]==null) d[k]=b[k];
+    d.reasons.forEach(r=>{if(!r.pri) r.pri=3;if(r.d==null) r.d=radOf(r.pri);if(r.ux==null){r.ux=SIDE[r.side].dir;r.uy=0}});}
+  function store(){
+    if(!state.mayoi||!Array.isArray(state.mayoi.list)) state.mayoi={list:[],cur:null};
+    const s=state.mayoi;if(!s.list.length) s.list.push(blank());
+    s.list.forEach(norm);
+    if(!s.list.find(d=>d.id===s.cur)) s.cur=s.list[0].id;
+    return s;
+  }
+  const D=()=>{const s=store();return s.list.find(d=>d.id===s.cur)};
+  const rById=id=>D().reasons.find(r=>r.id===id);
+  const nodeOf=item=>{const nid=D().links[item];return nid&&state.nodes[nid]?nid:null};
+
+  /* ---- 保存・取り消し（取り消しはこの画面の中だけ） ---- */
+  let past=[],future=[],cT=null,isOpen=false,sel=null;
+  const snapM=()=>JSON.stringify(state.mayoi||null);
+  function commit(now=true){
+    clearTimeout(cT);
+    if(!now){cT=setTimeout(()=>commit(true),700);saveSoon();return}
+    const s=snapM();if(s!==past[past.length-1]){past.push(s);if(past.length>80) past.shift();future=[]}
+    save();updU();
+  }
+  function restoreM(s){state.mayoi=JSON.parse(s);sel=null;cancelIE();renderAll();save()}
+  function undoM(){commit(true);if(past.length<2) return;future.push(past.pop());restoreM(past[past.length-1]);updU();toastM("取り消しました")}
+  function redoM(){if(!future.length) return;const s=future.pop();past.push(s);restoreM(s);updU()}
+  function updU(){q("my-undo").disabled=past.length<2;q("my-redo").disabled=!future.length}
+  let tT=null;
+  function toastM(t){const e=q("my-toast");e.textContent=t;e.classList.add("on");clearTimeout(tT);tT=setTimeout(()=>e.classList.remove("on"),2000)}
+
+  /* ---- 理由の置き場所 ---- */
+  const posOf=r=>{const c=SIDE[r.side].c;return {x:c.x+r.ux*r.d*R,y:c.y+r.uy*r.d*R}};
+  function setPos(r,p){
+    r.side=dist(p,CA)<=dist(p,CB)?"a":"b";
+    const own=SIDE[r.side].c,oth=SIDE[other(r.side)].c;
+    const vx=p.x-oth.x,vy=p.y-oth.y,dv=Math.hypot(vx,vy)||1;
+    if(dv<R+12) p={x:oth.x+vx/dv*(R+12),y:oth.y+vy/dv*(R+12)};
+    let dx=p.x-own.x,dy=p.y-own.y,d=Math.hypot(dx,dy)/R;
+    if(d<0.001){dx=SIDE[r.side].dir;dy=0;d=0.001}
+    const u=Math.hypot(dx,dy);r.ux=dx/u;r.uy=dy/u;r.d=Math.min(d,0.92);r.pri=priOf(r.d);
+  }
+  function autoPlace(r){
+    const s=SIDE[r.side],base=s.dir<0?Math.PI:0,lo=(5-r.pri)*STEP+0.03,hi=(6-r.pri)*STEP-0.03;
+    const others=D().reasons.filter(o=>o.id!==r.id&&o.side===r.side&&o.text.trim()).map(posOf);
+    let best=null,bs=-1e9;
+    for(let k=-6;k<=6;k++) for(let j=0;j<3;j++){
+      const a=base+k*Math.PI/12,d=lo+(hi-lo)*j/2,ux=Math.cos(a),uy=Math.sin(a),p={x:s.c.x+ux*d*R,y:s.c.y+uy*d*R};
+      if(dist(p,SIDE[other(r.side)].c)<R+12) continue;
+      let m=3;others.forEach(o=>{m=Math.min(m,Math.max(Math.abs(p.y-o.y)/30,Math.abs(p.x-o.x)/170))});
+      m-=Math.abs(k)*0.02+Math.abs(j-1)*0.03;
+      if(m>bs){bs=m;best={ux,uy,d}}
+    }
+    if(best){r.ux=best.ux;r.uy=best.uy;r.d=best.d}else{r.ux=s.dir;r.uy=0;r.d=radOf(r.pri)}
+  }
+  function setPri(r,p){r.pri=p;autoPlace(r)}
+  function newReason(side,pri=3){const r={id:uidM(),side,text:"",pri,ux:SIDE[side].dir,uy:0,d:radOf(pri)};D().reasons.push(r);return r}
+  function removeReason(id){const d=D();d.reasons=d.reasons.filter(r=>r.id!==id);delete d.links[id];if(sel===id) sel=null}
+  const weight=s=>D().reasons.filter(r=>r.side===s&&r.text.trim()).reduce((a,r)=>a+r.pri,0);
+  const sorted=side=>D().reasons.filter(r=>r.side===side).sort((x,y)=>y.pri-x.pri);
+
+  /* ---- 迷いのタブ（この紙の中の迷いの一覧） ---- */
+  const tabName=d=>d.name||short(d.worry,14)||"新しい迷い";
+  function renderTabs(){
+    const s=store(),tb=q("my-tabs");tb.innerHTML="";
+    s.list.forEach(d=>{
+      const el=document.createElement("div");el.className="mytab"+(d.id===s.cur?" on":"");
+      el.innerHTML=`<span class="nm">${escM(tabName(d))}</span><span class="x" title="この迷いを消す">✕</span>`;
+      el.title="ダブルクリックで名前を変える";
+      el.onclick=e=>{
+        if(e.target.classList.contains("x")){
+          if(!confirm(`「${tabName(d)}」を消しますか？（⌘Zで戻せます）`)) return;
+          s.list=s.list.filter(x=>x!==d);store();sel=null;commit();renderAll();return;
+        }
+        if(s.cur!==d.id){cancelIE();s.cur=d.id;sel=null;save();renderAll()}
+      };
+      el.ondblclick=()=>{const v=prompt("この迷いの名前（空にすると悩みの文から付きます）",d.name||tabName(d));
+        if(v!=null){d.name=v.trim();commit();renderTabs()}};
+      tb.appendChild(el);
+    });
+    const add=document.createElement("button");add.textContent="＋ 新しい迷い";
+    add.onclick=()=>{const b=blank(),c=viewCenter();b.x=Math.round(c.x-FW/2+s.list.length*30);b.y=Math.round(c.y-130+s.list.length*30);
+      s.list.push(b);s.cur=b.id;sel=null;commit();renderAll();
+      if(innerWidth<=820) setPane("side");setTimeout(()=>q("my-worry").focus(),30)};
+    tb.appendChild(add);
+  }
+
+  /* ---- 左の欄 ---- */
+  const FIELDS={worry:"my-worry",a:"my-optA",b:"my-optB",answer:"my-answer",backup:"my-backup"};
+  for(const k in FIELDS){
+    const t=q(FIELDS[k]);
+    t.addEventListener("input",()=>{D()[k]=t.value;grow(t);renderVenn();if(k==="worry"&&!D().name) renderTabs();commit(false)});
+    t.addEventListener("keydown",e=>{
+      if(e.isComposing||e.keyCode===229) return;
+      if((k==="a"||k==="b")&&e.key==="Enter"&&!e.shiftKey){e.preventDefault();addFromList(k)}
+    });
+  }
+  root.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>addFromList(b.dataset.add));
+  root.querySelectorAll("button.lk[data-lk]").forEach(b=>b.onclick=()=>{const r=b.getBoundingClientRect();openLinkMenu(b.dataset.lk,r.left,r.bottom+4)});
+  function addFromList(side,pri=3){const r=newReason(side,pri);autoPlace(r);sel=r.id;commit();renderSide(r.id);renderVenn()}
+  function renderSide(focusId){
+    const d=D();
+    for(const k in FIELDS){const t=q(FIELDS[k]);if(document.activeElement!==t) t.value=d[k]}
+    renderList("a");renderList("b");
+    root.querySelectorAll("button.lk[data-lk]").forEach(b=>{const on=!!nodeOf(b.dataset.lk);b.classList.toggle("on",on);
+      b.title=on?"🔗 札「"+short(state.nodes[nodeOf(b.dataset.lk)].text,20)+"」とつながっている":"札につなぐ"});
+    requestAnimationFrame(growAll);
+    if(focusId){const t=root.querySelector(`.row[data-id="${focusId}"] textarea`);if(t){t.focus();t.setSelectionRange(t.value.length,t.value.length)}}
+  }
+  function renderList(side){
+    const box=q(side==="a"?"my-rsA":"my-rsB");box.innerHTML="";
+    sorted(side).forEach(r=>{
+      const row=document.createElement("div");row.className="row"+(r.id===sel?" sel":"");row.dataset.id=r.id;
+      row.style.setProperty("--pc",PRI_C[r.pri]);row.style.setProperty("--fs",(12+r.pri*1.3)+"px");row.style.setProperty("--fw",r.pri>=4?700:400);
+      const ln=nodeOf(r.id);
+      row.innerHTML=`<textarea rows="1" placeholder="${side==="a"?"アレ":"コレ"}を選ぶ理由"></textarea>
+        <div class="pri"><div class="dots">${[1,2,3,4,5].map(p=>`<button data-p="${p}" class="${p<=r.pri?"on":""}" title="${PRI_T[p]}"></button>`).join("")}</div><span class="pt">${PRI_T[r.pri]}</span></div>
+        <button class="lk${ln?" on":""}" title="${ln?"🔗 札「"+escM(short(state.nodes[ln].text,20))+"」とつながっている":"札につなぐ"}">🔗</button>
+        <button class="x" title="消す">✕</button>`;
+      const ta=row.querySelector("textarea");ta.value=r.text;
+      ta.oninput=()=>{r.text=ta.value;grow(ta);renderVenn();commit(false)};
+      ta.onfocus=()=>{if(sel!==r.id){sel=r.id;renderVenn();markRow()}};
+      ta.onkeydown=e=>{
+        if(e.isComposing||e.keyCode===229) return;
+        if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();addFromList(side,Math.max(1,r.pri-1))}
+        else if(e.key==="Backspace"&&!ta.value){e.preventDefault();const list=sorted(side),i=list.indexOf(r);
+          const prev=list[i-1]||list[i+1];removeReason(r.id);commit();renderSide(prev&&prev.id);renderVenn();if(!prev) q(side==="a"?"my-optA":"my-optB").focus()}
+      };
+      row.querySelectorAll(".pri button").forEach(b=>b.onclick=()=>{setPri(r,+b.dataset.p);sel=r.id;commit();renderSide();renderVenn()});
+      row.querySelector(".lk").onclick=e=>{const b=e.currentTarget.getBoundingClientRect();openLinkMenu(r.id,b.left-160,b.bottom+4)};
+      row.querySelector(".x").onclick=()=>{removeReason(r.id);commit();renderSide();renderVenn()};
+      box.appendChild(row);
+    });
+  }
+  const markRow=()=>root.querySelectorAll(".row").forEach(el=>el.classList.toggle("sel",el.dataset.id===sel));
+  function growAll(){root.querySelectorAll(".myside textarea").forEach(grow)}
+
+  /* ---- 円の図 ---- */
+  function wrapText(s,n,max){const out=[];String(s||"").split("\n").forEach(p=>{for(let i=0;i<p.length;i+=n) out.push(p.slice(i,i+n));if(!p) out.push("")});
+    if(out.length>max){out.length=max;out[max-1]=out[max-1].slice(0,n-1)+"…"}return out}
+  function layoutLabels(side,rs){
+    const items=rs.filter(r=>r.side===side).map(r=>{const p=posOf(r),fs=12+r.pri*1.6,per=Math.max(6,Math.floor(COLW/fs)),
+      t=(nodeOf(r.id)?"🔗":"")+(r.text||"（書いている…）"),ls=wrapText(t,per,3);return {r,p,fs,ls,h:ls.length*fs*1.25}}).sort((a,b)=>a.p.y-b.p.y);
+    const gap=9;let y=-1e9;
+    items.forEach(it=>{it.y=Math.max(it.p.y-it.h/2,y);y=it.y+it.h+gap});
+    let b=CY+R+12;
+    for(let i=items.length-1;i>=0;i--){const it=items[i];if(it.y+it.h>b) it.y=b-it.h;b=it.y-gap}
+    return items;
+  }
+  function renderVenn(){
+    const d=D();let h="";
+    ["a","b"].forEach(s=>{
+      const S=SIDE[s];
+      h+=`<circle cx="${S.c.x}" cy="${S.c.y}" r="${R}" fill="${S.col}" fill-opacity=".07" stroke="${S.col}" stroke-width="2.5" style="filter:drop-shadow(0 0 10px ${S.col}88)"/>`;
+      for(let k=1;k<5;k++) h+=`<circle cx="${S.c.x}" cy="${S.c.y}" r="${k*STEP*R}" fill="none" stroke="${S.col}" stroke-opacity=".16" stroke-dasharray="3 6"/>`;
+      for(let p=5;p>=1;p--) h+=`<text x="${S.c.x}" y="${S.c.y+radOf(p)*R+5}" text-anchor="middle" font-size="13" fill="${S.col}" fill-opacity=".32">${p}</text>`;
+    });
+    const top=CY-LENS_H,bot=CY+LENS_H,mid=(CA.x+CB.x)/2,has=d.answer.trim();
+    h+=`<path data-edit="answer" d="M${mid},${top} A${R},${R} 0 0 1 ${mid},${bot} A${R},${R} 0 0 1 ${mid},${top}Z" fill="#7dff9a" fill-opacity="${has?.16:.05}" stroke="#7dff9a" stroke-opacity="${has?.9:.35}" stroke-width="${has?2.5:1.5}" ${has?'style="filter:drop-shadow(0 0 12px #7dff9a88)"':""}/>`;
+    h+=`<text x="${mid}" y="${top+52}" text-anchor="middle" font-size="14" fill="#7dff9a" fill-opacity=".8" pointer-events="none" letter-spacing="2">◎ 答え${nodeOf("answer")?" 🔗":""}</text>`;
+    if(has){
+      const ls=wrapText(d.answer,7,7),y0=CY-(ls.length-1)*15;
+      h+=`<text text-anchor="middle" font-size="22" font-weight="700" fill="#e9ffef" pointer-events="none">${ls.map((l,i)=>`<tspan x="${mid}" y="${y0+i*30}">${escM(l)}</tspan>`).join("")}</text>`;
+    }else{
+      h+=`<text x="${mid}" y="${CY+6}" text-anchor="middle" font-size="40" font-weight="700" fill="#7dff9a" class="pulse" pointer-events="none">？</text>`;
+      h+=`<text x="${mid}" y="${CY+40}" text-anchor="middle" font-size="13" fill="#7dff9a" fill-opacity=".6" pointer-events="none">クリックで書く</text>`;
+    }
+    let topY=0;
+    ["a","b"].forEach(s=>{
+      const S=SIDE[s],t=d[s].trim(),base=CY-R-28;
+      let fs=t?26:18,per=Math.floor(320/fs),ls=t?wrapText(t,per,99):["クリックで書く"];
+      if(ls.length>4){per=Math.ceil(t.replace(/\n/g,"").length/4);fs=Math.max(15,Math.floor(320/per));ls=wrapText(t,per,6)}
+      const lh=fs*1.25,y1=base-(ls.length-1)*lh;topY=Math.min(topY,y1-fs-26);
+      h+=`<g data-edit="${s}"><text x="${S.c.x}" y="${y1-fs-6}" text-anchor="middle" font-size="14" fill="${S.col}" fill-opacity=".7" letter-spacing="3">${s==="a"?"◀ アレ":"コレ ▶"}</text>
+        <text text-anchor="middle" font-size="${fs}" font-weight="700" fill="${t?S.col:"#4a5578"}" style="${t?`filter:drop-shadow(0 0 8px ${S.col}99)`:""}">${ls.map((l,i)=>`<tspan x="${S.c.x}" y="${y1+i*lh}">${escM(l)}</tspan>`).join("")}</text>
+        <title>${escM(t)}</title></g>`;
+    });
+    const rs=d.reasons.filter(r=>r.text.trim()||r.id===ieId());
+    ["a","b"].forEach(side=>{
+      const S=SIDE[side],colX=S.c.x+S.dir*(R+40);
+      layoutLabels(side,rs).forEach(it=>{
+        const r=it.r,p=it.p,on=r.id===sel,rad=5+r.pri*1.6,col=PRI_C[r.pri],lh=it.fs*1.25,my=it.y+it.h/2;
+        const ex=p.x+S.dir*rad,ax=colX-S.dir*10;
+        topY=Math.min(topY,it.y-10);
+        h+=`<g class="rg${on?" on":""}" data-rid="${r.id}"><title>${escM(r.text)}（優先度${r.pri}）</title>
+          <path class="ld" d="M${ex},${p.y} C${ex+S.dir*90},${p.y} ${ax-S.dir*70},${my} ${ax},${my}" fill="none" stroke="${col}"/>
+          <rect x="${side==="a"?colX-COLW-6:colX-6}" y="${it.y-4}" width="${COLW+18}" height="${it.h+8}" fill="transparent"/>
+          <circle cx="${p.x}" cy="${p.y}" r="${rad+10}" fill="transparent"/>
+          ${on?`<circle cx="${p.x}" cy="${p.y}" r="${rad+6}" fill="none" stroke="#fff" stroke-width="1.5" stroke-dasharray="3 3"/>`:""}
+          <circle cx="${p.x}" cy="${p.y}" r="${rad}" fill="${col}" style="filter:drop-shadow(0 0 ${r.pri*2}px ${col})"/>
+          <circle cx="${ax}" cy="${my}" r="2.5" fill="${col}"/>
+          <text class="lt" text-anchor="${side==="a"?"end":"start"}" font-size="${it.fs}" font-weight="${r.pri>=4?700:400}" fill="${on?"#fff":"#dfe8ff"}" fill-opacity="${0.6+r.pri*0.08}">${
+            it.ls.map((l,i)=>`<tspan x="${colX}" y="${it.y+it.fs*0.95+i*lh}">${escM(l)}</tspan>`).join("")}</text></g>`;
+      });
+    });
+    const wa=weight("a"),wb=weight("b"),tot=wa+wb,bk=d.backup.trim();
+    h+=`<g data-edit="backup"><rect x="250" y="${CY+R+22}" width="500" height="40" rx="6" fill="#b48cff" fill-opacity="${bk?.1:.03}" stroke="#b48cff" stroke-opacity="${bk?.7:.3}" ${bk?"":'stroke-dasharray="4 4"'}/>
+      <text x="500" y="${CY+R+48}" text-anchor="middle" font-size="15" fill="${bk?"#e4d8ff":"#6d6394"}">${escM(bk?"↪ "+(nodeOf("backup")?"🔗":"")+short(bk,30):"↪ バックアップ（答えがダメだったら？）クリックで書く")}</text></g>`;
+    if(tot){
+      const y=CY+R+86,x0=300,w=400,wA=w*wa/tot;
+      h+=`<text x="${x0-12}" y="${y+5}" text-anchor="end" font-size="14" fill="${SIDE.a.col}">アレ ${wa}</text>
+        <rect x="${x0}" y="${y-6}" width="${wA}" height="12" fill="${SIDE.a.col}" fill-opacity=".75"/>
+        <rect x="${x0+wA}" y="${y-6}" width="${w-wA}" height="12" fill="${SIDE.b.col}" fill-opacity=".75"/>
+        <line x1="500" y1="${y-11}" x2="500" y2="${y+11}" stroke="#fff" stroke-opacity=".6"/>
+        <text x="${x0+w+12}" y="${y+5}" font-size="14" fill="${SIDE.b.col}">${wb} コレ</text>
+        <text x="500" y="${y+30}" text-anchor="middle" font-size="12" fill="#7a86a8">理由の重さ（優先度の合計）${wa===wb?"　いまは五分五分":wa>wb?"　いまはアレ寄り":"　いまはコレ寄り"}</text>`;
+    }
+    svgV.setAttribute("viewBox",`-270 ${Math.floor(topY)} 1540 ${760-Math.floor(topY)}`);
+    svgV.innerHTML=h;
+  }
+
+  /* ---- 円の中に直接書く ---- */
+  let ie=null;
+  const ieId=()=>ie&&ie.rid;
+  function toSvg(e){const pt=svgV.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;return pt.matrixTransform(svgV.getScreenCTM().inverse())}
+  function toStage(p){const pt=svgV.createSVGPoint();pt.x=p.x;pt.y=p.y;const c=pt.matrixTransform(svgV.getScreenCTM()),r=stg.getBoundingClientRect();return {x:c.x-r.left,y:c.y-r.top}}
+  function openIE(p,value,o){
+    commitIE();
+    const ta=document.createElement("textarea");ta.className="ie";ta.value=value;ta.rows=1;ta.placeholder=o.ph||"";
+    ta.style.setProperty("--iec",o.col);ta.style.width=(o.w||220)+"px";
+    const s=toStage(p),W=stg.clientWidth;
+    ta.style.left=Math.max(6,Math.min(s.x-(o.w||220)/2,W-(o.w||220)-6))+"px";ta.style.top=Math.max(6,s.y-20)+"px";
+    stg.appendChild(ta);grow(ta);ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);
+    ta.addEventListener("input",()=>grow(ta));
+    ta.addEventListener("keydown",e=>{
+      if(e.isComposing||e.keyCode===229) return;
+      if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();commitIE(true)}
+      else if(e.key==="Escape"){e.preventDefault();e.stopPropagation();cancelIE()}
+    });
+    ta.addEventListener("blur",()=>setTimeout(()=>{if(ie&&ie.ta===ta) commitIE()},0));
+    ie={ta,commit:o.commit,cancel:o.cancel,rid:o.rid};
+  }
+  function commitIE(enter){if(!ie) return;const x=ie;ie=null;x.ta.remove();x.commit(x.ta.value.trim(),enter)}
+  function cancelIE(){if(!ie) return;const x=ie;ie=null;x.ta.remove();x.cancel&&x.cancel()}
+  function editReason(r,isNew){
+    sel=r.id;const p=posOf(r);
+    openIE({x:p.x,y:p.y-26},r.text,{col:SIDE[r.side].col,w:230,rid:r.id,ph:(r.side==="a"?"アレ":"コレ")+"を選ぶ理由（⏎で次）",
+      commit:(t,enter)=>{
+        if(!t) removeReason(r.id);else r.text=t;
+        commit();renderSide();renderVenn();
+        if(enter&&t){const n=newReason(r.side,Math.max(1,r.pri-1));autoPlace(n);editReason(n,true);renderVenn()}
+      },
+      cancel:()=>{if(isNew||!r.text.trim()) removeReason(r.id);renderVenn();renderSide()}});
+    renderVenn();markRow();
+  }
+  function editField(k){
+    const S=k==="a"||k==="b"?SIDE[k]:null;
+    const p=S?{x:S.c.x,y:CY-R-36}:k==="answer"?{x:500,y:CY-20}:{x:500,y:CY+R+42};
+    const col=S?S.col:k==="answer"?"#7dff9a":"#b48cff";
+    const ph=k==="a"?"アレ（ひとつめの選択肢）":k==="b"?"コレ（ふたつめの選択肢）":k==="answer"?"答え":"答えがダメだったら？";
+    openIE(p,D()[k],{col,w:k==="answer"?220:360,ph,commit:t=>{D()[k]=t;commit();renderAll()}});
+  }
+  function createAt(p){
+    const da=dist(p,CA),db_=dist(p,CB);
+    if(da>R&&db_>R){toastM("円の中をダブルクリックすると、そっち派の理由を書けます");return}
+    const r=newReason(da<=db_?"a":"b");setPos(r,p);editReason(r,true);
+  }
+  let down=null,lastTap={t:0};
+  svgV.addEventListener("pointerdown",e=>{
+    if(e.pointerType==="mouse"&&e.button!==0) return;
+    if(ie) commitIE();closeMenu();
+    const t=e.target.closest("[data-rid],[data-edit]"),p=toSvg(e);
+    down={cx:e.clientX,cy:e.clientY,p,rid:t&&t.dataset.rid||null,edit:t&&t.dataset.edit||null,moved:false,off:{x:0,y:0}};
+    if(down.rid&&rById(down.rid)){const o=posOf(rById(down.rid));down.off={x:o.x-p.x,y:o.y-p.y};sel=down.rid;renderVenn();markRow()}
+    try{svgV.setPointerCapture(e.pointerId)}catch(_){}
+  });
+  svgV.addEventListener("pointermove",e=>{
+    if(!down||!down.rid) return;
+    if(!down.moved&&Math.hypot(e.clientX-down.cx,e.clientY-down.cy)<4) return;
+    down.moved=true;const r=rById(down.rid);if(!r) return;const p=toSvg(e);setPos(r,{x:p.x+down.off.x,y:p.y+down.off.y});renderVenn();
+  });
+  svgV.addEventListener("pointerup",e=>{
+    const d=down;down=null;if(!d) return;const now=Date.now();
+    if(d.rid){
+      const r=rById(d.rid);if(!r) return;
+      if(d.moved){commit();renderSide();return}
+      if(now-lastTap.t<400&&lastTap.rid===d.rid){lastTap={t:0};editReason(r)}else lastTap={t:now,rid:d.rid};
+      return;
+    }
+    if(d.edit){editField(d.edit);return}
+    if(now-lastTap.t<400&&!lastTap.rid&&Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<24){lastTap={t:0};createAt(d.p)}
+    else{lastTap={t:now,x:e.clientX,y:e.clientY,rid:null};if(sel){sel=null;renderVenn();markRow()}}
+  });
+  svgV.addEventListener("pointercancel",()=>{down=null});
+  svgV.addEventListener("contextmenu",e=>{
+    const t=e.target.closest("[data-rid],[data-edit]");if(!t) return;
+    const item=t.dataset.rid||(t.dataset.edit==="answer"||t.dataset.edit==="backup"?t.dataset.edit:null);if(!item) return;
+    e.preventDefault();if(t.dataset.rid){sel=item;renderVenn();markRow()}
+    openLinkMenu(item,e.clientX,e.clientY);
+  });
+
+  /* ---- 札につなぐ ---- */
+  const itemText=item=>item==="answer"?D().answer:item==="backup"?D().backup:(rById(item)||{}).text||"";
+  const itemName=item=>item==="answer"?"答え":item==="backup"?"バックアップ":((rById(item)||{}).side==="a"?"アレ派の理由":"コレ派の理由");
+  function placeMenu(x,y){menu.style.display="block";
+    menu.style.left=Math.max(6,Math.min(x,innerWidth-menu.offsetWidth-6))+"px";
+    menu.style.top=Math.max(6,Math.min(y,innerHeight-menu.offsetHeight-6))+"px";
+    menu.querySelectorAll("button").forEach(b=>b.onmousedown=e=>e.preventDefault())}
+  function closeMenu(){menu.style.display="none"}
+  function openLinkMenu(item,x,y){
+    const t=itemText(item).trim();
+    if(!t){toastM("先に文を書いてから、札につなげます");return}
+    const nid=nodeOf(item);
+    menu.innerHTML=`<div class="cq">${itemName(item)}「<b>${escM(short(t,36))}</b>」${nid?`<br>🔗 いま：札「${escM(short(state.nodes[nid].text,24))}」`:""}</div>`+
+      (nid?`<button data-a="go" style="--c:#ffb200">→ つないだ札へ行く</button>`:"")+
+      `<button data-a="pick" style="--c:#00e5ff">🔗 ${nid?"ほかの札につなぎ直す":"いまある札につなぐ"}<br><small style="color:#7a86a8">紙に戻って、つなぐ札をクリック</small></button>`+
+      `<button data-a="new" style="--c:#7dff9a">＋ この文で新しい札を作ってつなぐ</button>`+
+      (nid?`<hr><button data-a="cut" style="--c:#ff3b3b">つなぎを外す</button>`:"");
+    placeMenu(x,y);
+    menu.querySelectorAll("button").forEach(b=>b.onclick=()=>{closeMenu();linkAct(b.dataset.a,item)});
+  }
+  let pick=null;
+  function linkAct(a,item){
+    const d=D();
+    if(a==="go"){const nid=nodeOf(item);if(!nid) return;close();select(nid);requestAnimationFrame(()=>focusNode(nid));return}
+    if(a==="cut"){delete d.links[item];commit();renderAll();paintMarks();toastM("つなぎを外しました");return}
+    if(a==="new"){
+      const sc=state.view.scale,wx=(stage.clientWidth/2-state.view.x)/sc-112,wy=(stage.clientHeight/2-state.view.y)/sc-30;
+      snapshot();const nid=add(itemText(item).trim(),wx,wy,null);
+      d.links[item]=nid;commit();render();renderAll();toastM("🔗 新しい札を作ってつなぎました（紙の真ん中あたり）");return;
+    }
+    if(a==="pick"){
+      pick={item,dId:d.id,map:state};
+      root.classList.remove("open");isOpen=false;document.body.classList.add("mypick");
+      q("my-picktxt").innerHTML="⚖ つなぐ札をクリック：<b>"+escM(short(itemText(item),24))+"</b>";
+      q("my-pick").classList.add("open");
+    }
+  }
+  function endPick(nid){
+    const p=pick;pick=null;q("my-pick").classList.remove("open");document.body.classList.remove("mypick");
+    if(!p) return;
+    if(state!==p.map){toastM("紙が変わったので、つなぐのをやめました");open(null,null,true);return}
+    const s=store();s.cur=p.dId;
+    if(nid){D().links[p.item]=nid;commit();}
+    open(p.dId,p.item,true);
+    if(nid) toastM("🔗 札「"+short(state.nodes[nid].text,16)+"」とつなぎました");
+  }
+  q("my-pickx").onclick=()=>endPick(null);
+  document.addEventListener("pointerdown",e=>{
+    if(!pick||e.target.closest("#my-pick")) return;
+    const el=e.target.closest&&e.target.closest(".node");if(!el) return;
+    e.preventDefault();e.stopPropagation();endPick(el.dataset.id);
+  },true);
+
+  /* 札の側に ⚖ を付ける（押すと迷い地図のその理由へ） */
+  function paintMarks(){
+    if(!state||!state.nodes) return;
+    const s=state.mayoi,linked={};
+    if(s&&Array.isArray(s.list)) s.list.forEach(d=>Object.keys(d.links||{}).forEach(item=>{
+      const nid=d.links[item];if(state.nodes[nid]) (linked[nid]=linked[nid]||[]).push({d,item});
+    }));
+    document.querySelectorAll("#world .node > .myb").forEach(b=>{if(!linked[b.parentElement.dataset.id]) b.remove()});
+    Object.keys(linked).forEach(nid=>{
+      const el=nodeEl(nid);if(!el) return;
+      let b=el.querySelector(":scope > .myb");
+      if(!b){b=document.createElement("div");b.className="myb";
+        b.addEventListener("pointerdown",e=>{e.stopPropagation()});
+        b.addEventListener("dblclick",e=>{e.stopPropagation()});
+        b.addEventListener("click",e=>{e.stopPropagation();const x=JSON.parse(b.dataset.to);open(x.d,x.item)});
+        el.appendChild(b);}
+      const arr=linked[nid];b.textContent="⚖";
+      b.title="迷い地図につながっている（押すと開く）\n"+arr.map(x=>"・"+tabName(x.d)+"："+(x.item==="answer"?"答え":x.item==="backup"?"バックアップ":"理由")).join("\n");
+      b.dataset.to=JSON.stringify({d:arr[0].d.id,item:arr[0].item});
+    });
+  }
+
+  /* ---- 紙の上の小さな枠 ---- */
+  const FW=300,FH_HEAD=26,VB={x:50,y:90,w:900,h:560},FSVG_H=Math.round(FW*VB.h/VB.w);
+  const NS="http://www.w3.org/2000/svg";
+  let frSel=null,fdrag=null,frTap={t:0};
+  const frameList=()=>(state.mayoi&&Array.isArray(state.mayoi.list))?state.mayoi.list:[];
+  const frById=id=>frameList().find(d=>d.id===id);
+  function viewCenter(){const sc=state.view.scale;return {x:(stage.clientWidth/2-state.view.x)/sc,y:(stage.clientHeight/2-state.view.y)/sc}}
+  function toWorldXY(cx,cy){const r=stage.getBoundingClientRect(),sc=state.view.scale;return {x:(cx-r.left-state.view.x)/sc,y:(cy-r.top-state.view.y)/sc}}
+  function ensurePos(d,i){if(typeof d.x==="number"&&typeof d.y==="number") return;const c=viewCenter();d.x=Math.round(c.x-FW/2+i*30);d.y=Math.round(c.y-130+i*30)}
+  const fpt=(d,px,py)=>({x:d.x+(px-VB.x)/VB.w*FW,y:d.y+FH_HEAD+(py-VB.y)/VB.h*FSVG_H});
+  function frameHtml(d){
+    let h="";
+    ["a","b"].forEach(s=>{const S=SIDE[s];
+      h+=`<circle cx="${S.c.x}" cy="${S.c.y}" r="${R}" fill="${S.col}" fill-opacity=".1" stroke="${S.col}" stroke-width="6"/>`;
+      h+=`<text x="${S.c.x+S.dir*30}" y="${CY-R+80}" text-anchor="middle" font-size="44" font-weight="700" fill="${S.col}">${escM(short(d[s]||(s==="a"?"アレ":"コレ"),8))}</text>`;});
+    const top=CY-LENS_H,bot=CY+LENS_H,mid=(CA.x+CB.x)/2,has=d.answer.trim();
+    h+=`<path d="M${mid},${top} A${R},${R} 0 0 1 ${mid},${bot} A${R},${R} 0 0 1 ${mid},${top}Z" fill="#7dff9a" fill-opacity="${has?.22:.06}" stroke="#7dff9a" stroke-opacity="${has?.9:.4}" stroke-width="5"/>`;
+    if(has){const ls=wrapText(d.answer,5,3),y0=CY-(ls.length-1)*24;
+      h+=`<text text-anchor="middle" font-size="40" font-weight="700" fill="#e9ffef">${ls.map((l,i)=>`<tspan x="${mid}" y="${y0+i*50}">${escM(l)}</tspan>`).join("")}</text>`}
+    else h+=`<text x="${mid}" y="${CY+20}" text-anchor="middle" font-size="70" font-weight="700" fill="#7dff9a" fill-opacity=".7">？</text>`;
+    d.reasons.filter(r=>r.text.trim()).forEach(r=>{const p=posOf(r),c=PRI_C[r.pri];
+      h+=`<circle cx="${p.x}" cy="${p.y}" r="${10+r.pri*3}" fill="${c}"><title>${escM(r.text)}</title></circle>`});
+    const n=d.reasons.filter(r=>r.text.trim()).length;
+    return `<div class="myfh">⚖ <b>${escM(short(d.worry||"（まだ悩みを書いていない）",24))}</b></div>
+      <svg viewBox="${VB.x} ${VB.y} ${VB.w} ${VB.h}" width="${FW}" height="${FSVG_H}">${h}</svg>
+      <div class="myff${has?"":" empty"}">${has?"◎ "+escM(short(d.answer,40)):"理由 "+n+"こ　ダブルクリックで開いて書く"}</div>`;
+  }
+  function renderFrames(){
+    if(!state||!state.nodes) return;
+    const list=frameList(),seen={};
+    list.forEach((d,i)=>{
+      norm(d);ensurePos(d,i);
+      let el=world.querySelector(`.myfr[data-did="${d.id}"]`);
+      if(!el){el=document.createElement("div");el.className="myfr";el.dataset.did=d.id;wireFrame(el);world.appendChild(el)}
+      el.style.left=d.x+"px";el.style.top=d.y+"px";
+      const sig=JSON.stringify([d.worry,d.a,d.b,d.answer,d.reasons.map(r=>[r.pri,r.ux,r.uy,r.d,r.side,r.text])]);
+      if(el._sig!==sig){el._sig=sig;el.innerHTML=frameHtml(d)}
+      el.classList.toggle("sel",frSel===d.id);seen[d.id]=1;
+    });
+    world.querySelectorAll(".myfr").forEach(el=>{if(!seen[el.dataset.did]) el.remove()});
+    drawLines();
+  }
+  function drawLines(){
+    if(!state||!state.nodes) return;
+    let L=document.getElementById("my-lines");
+    if(!L){L=document.createElementNS(NS,"svg");L.id="my-lines";
+      L.setAttribute("style","position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none");
+      world.insertBefore(L,world.firstChild)}
+    let h="";
+    frameList().forEach(d=>{
+      if(typeof d.x!=="number") return;
+      Object.keys(d.links||{}).forEach(item=>{
+        const nid=d.links[item],n=state.nodes[nid];if(!n) return;
+        const el=nodeEl(nid),w=el?el.offsetWidth:224,hh=el?el.offsetHeight:60;
+        let p,col;
+        if(item==="answer"){p=fpt(d,(CA.x+CB.x)/2,CY);col="#7dff9a"}
+        else if(item==="backup"){const fe=world.querySelector(`.myfr[data-did="${d.id}"]`);p={x:d.x+FW/2,y:d.y+(fe?fe.offsetHeight:FH_HEAD+FSVG_H+30)};col="#b48cff"}
+        else{const r=d.reasons.find(x=>x.id===item);if(!r||!r.text.trim()) return;const o=posOf(r);p=fpt(d,o.x,o.y);col=PRI_C[r.pri]}
+        const toLeft=n.x+w/2<p.x,tx=toLeft?n.x+w:n.x,ty=n.y+hh/2,dx=Math.max(50,Math.abs(tx-p.x)/2)*(toLeft?-1:1);
+        h+=`<path d="M${p.x},${p.y} C${p.x+dx},${p.y} ${tx-dx},${ty} ${tx},${ty}" fill="none" stroke="${col}" stroke-width="1.8" stroke-dasharray="6 4" stroke-opacity=".85"/>
+          <circle cx="${p.x}" cy="${p.y}" r="3.5" fill="${col}"/><circle cx="${tx}" cy="${ty}" r="3.5" fill="${col}"/>`;
+      });
+    });
+    L.innerHTML=h;
+  }
+  function markFrames(){world.querySelectorAll(".myfr").forEach(x=>x.classList.toggle("sel",x.dataset.did===frSel))}
+  function wireFrame(el){
+    el.addEventListener("pointerdown",e=>{
+      if(e.pointerType==="mouse"&&e.button!==0) return;
+      e.stopPropagation();closeFMenu();
+      const d=frById(el.dataset.did);if(!d) return;
+      if(typeof ed!=="undefined"&&ed) commitEd();
+      if(state.selected) select(null);
+      frSel=d.id;markFrames();
+      fdrag={d,el,sx:e.clientX,sy:e.clientY,ox:d.x,oy:d.y,moved:false};
+      try{el.setPointerCapture(e.pointerId)}catch(_){}
+    });
+    el.addEventListener("pointermove",e=>{
+      if(!fdrag||fdrag.el!==el) return;
+      const dx=e.clientX-fdrag.sx,dy=e.clientY-fdrag.sy;
+      if(!fdrag.moved&&Math.hypot(dx,dy)<4) return;
+      fdrag.moved=true;const sc=state.view.scale;
+      fdrag.d.x=Math.round(fdrag.ox+dx/sc);fdrag.d.y=Math.round(fdrag.oy+dy/sc);
+      el.style.left=fdrag.d.x+"px";el.style.top=fdrag.d.y+"px";drawLines();
+    });
+    el.addEventListener("pointerup",()=>{
+      const f=fdrag;fdrag=null;if(!f||f.el!==el) return;
+      if(f.moved){save();return}
+      const now=Date.now();
+      if(now-frTap.t<400&&frTap.id===f.d.id){frTap={t:0};open(f.d.id)}else frTap={t:now,id:f.d.id};
+    });
+    el.addEventListener("pointercancel",()=>{fdrag=null});
+    el.addEventListener("dblclick",e=>{e.stopPropagation();e.preventDefault()});
+    el.addEventListener("contextmenu",e=>{e.preventDefault();e.stopPropagation();
+      const d=frById(el.dataset.did);if(d){frSel=d.id;markFrames();openFMenu(d,e.clientX,e.clientY)}});
+  }
+  const fmenu=q("my-fmenu");
+  function closeFMenu(){fmenu.style.display="none"}
+  function openFMenu(d,x,y){
+    fmenu.innerHTML=`<button data-a="open">⚖ 開いて書く<span style="color:#7a86a8">（ダブルクリックでも）</span></button><button data-a="del" style="border-color:rgba(255,59,59,.5)">この迷いを消す</button><button data-a="x">やめる</button>`;
+    fmenu.style.display="block";
+    fmenu.style.left=Math.max(6,Math.min(x,innerWidth-fmenu.offsetWidth-6))+"px";
+    fmenu.style.top=Math.max(6,Math.min(y,innerHeight-fmenu.offsetHeight-6))+"px";
+    fmenu.querySelectorAll("button").forEach(b=>b.onclick=()=>{closeFMenu();
+      if(b.dataset.a==="open") open(d.id);
+      else if(b.dataset.a==="del"){if(!confirm(`「${tabName(d)}」の迷いを消しますか？（つないだ札は残ります）`)) return;
+        state.mayoi.list=state.mayoi.list.filter(x=>x!==d);if(state.mayoi.cur===d.id) state.mayoi.cur=null;frSel=null;save();render()}
+    });
+  }
+  document.addEventListener("pointerdown",e=>{if(fmenu.style.display==="block"&&!e.target.closest("#my-fmenu")) closeFMenu()},true);
+  document.addEventListener("keydown",e=>{
+    if(isOpen||!frSel) return;
+    if(e.target.matches&&e.target.matches("input,textarea,select,[contenteditable]")) return;
+    if(e.key==="Enter"){e.preventDefault();e.stopImmediatePropagation();open(frSel)}
+    else if(e.key==="Escape"){frSel=null;markFrames()}
+  },true);
+  document.addEventListener("pointerdown",e=>{if(frSel&&!e.target.closest(".myfr")&&!e.target.closest("#my-fmenu")){frSel=null;markFrames()}},true);
+  /* 紙の上に新しい迷いの枠を置いて、すぐ大きく開く（中は空なので） */
+  function place(cx,cy){
+    if(!state.mayoi||!Array.isArray(state.mayoi.list)) state.mayoi={list:[],cur:null};
+    const d=blank(),w=(cx==null)?viewCenter():toWorldXY(cx,cy);
+    d.x=Math.round(w.x-(cx==null?FW/2:20));d.y=Math.round(w.y-(cx==null?130:20));
+    state.mayoi.list.push(d);state.mayoi.cur=d.id;save();render();open(d.id);
+    setTimeout(()=>q("my-worry").focus(),60);
+  }
+
+  /* ---- 悩みの文字を囲って、アレ／コレへ ---- */
+  function worrySel(){const t=q("my-worry");return t.value.slice(t.selectionStart,t.selectionEnd).trim()}
+  function openCtx(x,y){
+    const qq=worrySel();if(!qq) return false;
+    const d=D(),put=(k,label,col)=>`<button data-k="${k}" style="--c:${col}">${label}${d[k]&&d[k].trim()?' <small style="color:#7a86a8">（今の文と入れ替え）</small>':""}</button>`;
+    menu.innerHTML=`<div class="cq">「<b>${escM(short(qq,40))}</b>」を…</div>`+
+      put("a","◀ アレに入れる",SIDE.a.col)+put("b","コレ ▶ に入れる",SIDE.b.col)+"<hr>"+
+      `<button data-r="a" style="--c:${SIDE.a.col}">＋ アレ派の理由にする</button><button data-r="b" style="--c:${SIDE.b.col}">＋ コレ派の理由にする</button>`+"<hr>"+
+      `<button data-k="answer" style="--c:#7dff9a">◎ 答えに入れる</button>`;
+    placeMenu(x,y);
+    menu.querySelectorAll("button").forEach(b=>b.onclick=()=>{
+      const d=D();
+      if(b.dataset.k){d[b.dataset.k]=qq;toastM(`${b.dataset.k==="a"?"アレ":b.dataset.k==="b"?"コレ":"答え"}に入れました（⌘Zで戻せる）`)}
+      else{const r=newReason(b.dataset.r);r.text=qq;autoPlace(r);sel=r.id;toastM(`${b.dataset.r==="a"?"アレ":"コレ"}派の理由にしました`)}
+      closeMenu();commit();renderSide();renderVenn();
+    });
+    return true;
+  }
+  q("my-worry").addEventListener("contextmenu",e=>{if(openCtx(e.clientX,e.clientY)) e.preventDefault()});
+  q("my-worry").addEventListener("pointerup",e=>{if(e.pointerType==="mouse") return;setTimeout(()=>{const r=q("my-worry").getBoundingClientRect();openCtx(r.left,r.bottom+6)},350)});
+  root.addEventListener("pointerdown",e=>{if(!e.target.closest(".mymenu")) closeMenu()},true);
+
+  /* ---- AIに渡す ---- */
+  const MODES=[
+    {k:"shikaku",ico:"🗡",name:"死角を突いて",ask:"どちらにすべきかの答えは、まだ言わないでください。\n下に書いたアレ派・コレ派の理由と優先度を読んで、私が見落としていそうな点、理由どうしの矛盾、思い込みを3〜5個、問いの形で突いてください。\n優先度の高い理由ほど重く見てください。"},
+    {k:"mannaka",ico:"◎",name:"真ん中の答えを出して",ask:"アレかコレかの二択にせず、アレ派の理由とコレ派の理由の「両方」をなるべく満たす答え（円の重なりに入る案）を3つ出してください。\nそれぞれ、どの理由を満たして、どの理由をあきらめるかを1行ずつ。優先度の高い理由を満たす案を上に。"},
+    {k:"kimete",ico:"⚖",name:"あえて決めて",ask:"あえて1つに決めてください。理由は、書いてある理由と優先度から短く3行以内で。\n私はその答えに反発を感じるかどうかで、自分の本音を確かめます。\n最後に「もし反発を感じたなら、それは何を大事にしているサインか」を一言そえてください。"},
+    {k:"backup",ico:"🛟",name:"バックアップを考えて",ask:"下の「答え」がうまくいかなかった時のバックアップを考えたいです。\n①うまくいっていないと判断する目安（いつ・何を見て）②その時に切り替える先 ③今のうちに残しておくと切り替えが楽になること、を短く出してください。"},
+  ];
+  const lkNote=item=>{const nid=nodeOf(item);return nid?`（札「${line(state.nodes[nid].text)}」とつながっている）`:""};
+  function buildText(mode){
+    const d=D(),md=MODES.find(x=>x.k===mode)||MODES[0],L=[];
+    L.push(`# 迷いの相談（${md.name}）`,"",md.ask,"","---","");
+    L.push("## 悩み",d.worry.trim()?line(d.worry):"（まだ書いていない）","");
+    ["a","b"].forEach(s=>{
+      L.push(`## ${s==="a"?"アレ":"コレ"}：${d[s].trim()?line(d[s]):"（まだ書いていない）"}`);
+      const rs=sorted(s).filter(r=>r.text.trim());
+      if(rs.length) rs.forEach(r=>L.push(`- ${"●".repeat(r.pri)}${"○".repeat(5-r.pri)}（${PRI_T[r.pri]}）${line(r.text)}${lkNote(r.id)}`));
+      else L.push("- （理由はまだ書いていない）");
+      L.push("");
+    });
+    const wa=weight("a"),wb=weight("b");
+    if(wa+wb) L.push(`理由の重さ（優先度の合計）：アレ ${wa} ／ コレ ${wb}`,"※本人が付けた優先度の単純な合計で、正解ではなく目安。","");
+    L.push("## 今の答え",d.answer.trim()?line(d.answer)+lkNote("answer"):"（まだ出ていない）","");
+    L.push("## 答えがダメだったときのバックアップ",d.backup.trim()?line(d.backup)+lkNote("backup"):"（まだ考えていない）","");
+    return L.join("\n");
+  }
+  async function copyText(t){
+    try{await navigator.clipboard.writeText(t);return true}
+    catch(e){const ta=document.createElement("textarea");ta.value=t;ta.style.position="fixed";ta.style.opacity="0";root.appendChild(ta);ta.select();
+      let ok=false;try{ok=document.execCommand("copy")}catch(_){}ta.remove();return ok}
+  }
+  let aiMode="shikaku";
+  async function pickMode(k){
+    aiMode=k;root.querySelectorAll(".myai .modes button").forEach(b=>b.classList.toggle("on",b.dataset.k===k));
+    const t=buildText(k);q("my-aitext").value=t;
+    const ok=await copyText(t),md=MODES.find(x=>x.k===k);
+    q("my-aiinfo").textContent=ok?`✓ コピーしました（${md.ico} ${md.name}）— 貼るだけ`:"⚠ コピーできなかったので、下の文を選んでコピーしてください";
+  }
+  q("my-aibtn").onclick=()=>{commitIE();
+    root.querySelector(".myai .modes").innerHTML=MODES.map(x=>`<button data-k="${x.k}">${x.ico} ${x.name}</button>`).join("");
+    root.querySelectorAll(".myai .modes button").forEach(b=>b.onclick=()=>pickMode(b.dataset.k));
+    q("my-ai").classList.add("open");pickMode(aiMode)};
+  q("my-aiclose").onclick=()=>q("my-ai").classList.remove("open");
+  q("my-aicopy").onclick=async()=>{const ok=await copyText(q("my-aitext").value);q("my-aiinfo").textContent=ok?"✓ 書き直した文をコピーしました":"⚠ コピーできませんでした"};
+
+  /* ---- 単体版（~/mayoi）の💾を取り込む ---- */
+  q("my-load").onclick=()=>q("my-file").click();
+  q("my-file").onchange=async e=>{
+    const f=e.target.files[0];e.target.value="";if(!f) return;
+    try{const o=JSON.parse(await f.text());const maps=Array.isArray(o.maps)?o.maps.filter(m=>Array.isArray(m.reasons)):null;
+      if(!maps||!maps.length) throw 0;
+      const s=store();maps.forEach(m=>{const d={...blank(),...m,id:uidM(),links:{}};norm(d);s.list.push(d)});
+      s.cur=s.list[s.list.length-1].id;sel=null;commit();renderAll();toastM(`${maps.length}件の迷いを取り込みました`);
+    }catch(_){toastM("⚠ 読めないファイルでした")}
+  };
+
+  /* ---- 画面の開け閉め ---- */
+  function setPane(p){cancelIE();root.dataset.pane=p;root.querySelectorAll(".mtog button").forEach(b=>b.classList.toggle("on",b.dataset.p===p))}
+  root.querySelectorAll(".mtog button").forEach(b=>b.onclick=()=>setPane(b.dataset.p));
+  function setFold(on){root.classList.toggle("fold",on);q("my-fold").textContent=on?"◨ 欄を出す":"◧ 欄をたたむ";
+    q("my-fold").classList.toggle("on",on);try{localStorage.setItem("atozuke.mayoiFold",on?"1":"")}catch(e){}
+    cancelIE();if(!on) requestAnimationFrame(growAll)}
+  q("my-fold").onclick=()=>setFold(!root.classList.contains("fold"));
+  try{if(localStorage.getItem("atozuke.mayoiFold")) setFold(true)}catch(e){}
+  q("my-undo").onclick=undoM;q("my-redo").onclick=redoM;
+  q("my-close").onclick=()=>close();
+  function renderAll(){renderTabs();renderSide();renderVenn();updU()}
+  function open(dId,item,keepHist){
+    if(typeof ed!=="undefined"&&ed) commitEd();
+    if(typeof closeSubMenu==="function") closeSubMenu();
+    const s=store();if(dId&&s.list.find(d=>d.id===dId)) s.cur=dId;
+    if(!keepHist){past=[snapM()];future=[]}
+    sel=item&&rById(item)?item:null;
+    root.classList.add("open");isOpen=true;
+    renderAll();requestAnimationFrame(()=>{growAll();renderVenn()});
+    save();
+  }
+  /* ---- 窓：右上の角を引く／見出しをつかんで動かす ---- */
+  const WKEY="atozuke.mayoiWin",MINW=420,MINH=300;
+  function setWin(r){
+    if(!r){root.classList.remove("win");root.style.left=root.style.top=root.style.width=root.style.height="";try{localStorage.removeItem(WKEY)}catch(e){}}
+    else{root.classList.add("win");root.style.left=r.x+"px";root.style.top=r.y+"px";root.style.width=r.w+"px";root.style.height=r.h+"px";
+      try{localStorage.setItem(WKEY,JSON.stringify(r))}catch(e){}}
+    cancelIE();requestAnimationFrame(()=>{growAll();renderVenn()});
+  }
+  let wdrag=null;
+  q("my-rs").addEventListener("pointerdown",e=>{
+    e.preventDefault();e.stopPropagation();cancelIE();closeMenu();
+    const r=root.getBoundingClientRect();
+    wdrag={k:"rs",left:r.left,bottom:r.bottom,sx:e.clientX,sy:e.clientY,right:r.right,top:r.top,moved:false};
+    try{q("my-rs").setPointerCapture(e.pointerId)}catch(_){}
+  });
+  q("my-rs").addEventListener("pointermove",e=>{
+    if(!wdrag||wdrag.k!=="rs") return;
+    if(!wdrag.moved&&Math.hypot(e.clientX-wdrag.sx,e.clientY-wdrag.sy)<4) return;
+    wdrag.moved=true;
+    const right=Math.min(innerWidth,wdrag.right+(e.clientX-wdrag.sx)),top=Math.max(0,wdrag.top+(e.clientY-wdrag.sy));
+    const w=Math.max(160,right-wdrag.left),h=Math.max(120,wdrag.bottom-top);
+    root.classList.add("win");root.style.left=wdrag.left+"px";root.style.top=(wdrag.bottom-h)+"px";root.style.width=w+"px";root.style.height=h+"px";
+    root.classList.toggle("tiny",w<MINW||h<MINH);
+  });
+  q("my-rs").addEventListener("pointerup",()=>{
+    const d=wdrag;wdrag=null;if(!d||d.k!=="rs") return;
+    if(!d.moved) return;
+    const r=root.getBoundingClientRect();root.classList.remove("tiny");
+    if(r.width<MINW||r.height<MINH){setWin(null);close();toastHost("⚖ 迷い地図を枠に戻した（ダブルクリックでまた開く）");return}
+    if(r.width>innerWidth-30&&r.top<30){setWin(null);return}
+    setWin({x:Math.round(r.left),y:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height)});
+  });
+  q("my-rs").addEventListener("dblclick",e=>{e.stopPropagation();
+    if(root.classList.contains("win")) setWin(null);
+    else setWin({x:Math.round(innerWidth*.42),y:70,w:Math.round(innerWidth*.56),h:Math.round(innerHeight-90)})});
+  const bar=root.querySelector(".mybar");
+  bar.addEventListener("pointerdown",e=>{
+    if(!root.classList.contains("win")||e.target.closest("button,input")) return;
+    const r=root.getBoundingClientRect();wdrag={k:"mv",sx:e.clientX,sy:e.clientY,x:r.left,y:r.top};
+    try{bar.setPointerCapture(e.pointerId)}catch(_){}
+  });
+  bar.addEventListener("pointermove",e=>{
+    if(!wdrag||wdrag.k!=="mv") return;
+    const x=Math.max(-root.offsetWidth+120,Math.min(innerWidth-120,wdrag.x+e.clientX-wdrag.sx)),y=Math.max(0,Math.min(innerHeight-60,wdrag.y+e.clientY-wdrag.sy));
+    root.style.left=x+"px";root.style.top=y+"px";
+  });
+  bar.addEventListener("pointerup",()=>{
+    const d=wdrag;wdrag=null;if(!d||d.k!=="mv") return;
+    const r=root.getBoundingClientRect();setWin({x:Math.round(r.left),y:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height)});
+  });
+  bar.addEventListener("dblclick",e=>{if(e.target.closest("button")) return;
+    if(root.classList.contains("win")) setWin(null);
+    else setWin({x:Math.round(innerWidth*.42),y:70,w:Math.round(innerWidth*.56),h:Math.round(innerHeight-90)})});
+  function toastHost(t){if(typeof toast==="function") toast(t)}
+  try{const w=JSON.parse(localStorage.getItem(WKEY)||"null");if(w&&w.w>=MINW&&w.h>=MINH) setWin({x:Math.min(w.x,innerWidth-200),y:Math.min(w.y,innerHeight-120),w:w.w,h:w.h})}catch(e){}
+
+  function close(){commitIE();closeMenu();q("my-ai").classList.remove("open");root.classList.remove("open");isOpen=false;
+    if(typeof render==="function") render();paintMarks()}
+
+  /* キーは紙（札）の操作に漏らさない */
+  root.addEventListener("keydown",e=>{e.stopPropagation();myKey(e)});
+  ["paste","copy","cut","keyup"].forEach(t=>root.addEventListener(t,e=>e.stopPropagation()));
+  window.addEventListener("keydown",e=>{
+    if(pick&&e.key==="Escape"){e.preventDefault();e.stopImmediatePropagation();endPick(null);return}
+    if(!isOpen||root.contains(e.target)) return;
+    if(root.classList.contains("win")) return;          /* 窓のときは紙のキー操作をじゃましない */
+    e.stopImmediatePropagation();myKey(e);
+  },true);
+  function myKey(e){
+    const t=e.target,typing=t.matches&&t.matches("input,textarea,select");
+    const mod=e.metaKey||e.ctrlKey;
+    if(e.key==="Escape"){
+      if(menu.style.display==="block"){closeMenu();return}
+      if(q("my-ai").classList.contains("open")){q("my-ai").classList.remove("open");return}
+      if(!typing){e.preventDefault();close();return}
+      return;
+    }
+    if(mod&&!typing&&e.key.toLowerCase()==="z"){e.preventDefault();e.shiftKey?redoM():undoM();return}
+    if(mod&&!typing&&e.key.toLowerCase()==="y"){e.preventDefault();redoM();return}
+    if(typing||e.isComposing) return;
+    const r=sel&&rById(sel);if(!r) return;
+    if(e.key==="Delete"||e.key==="Backspace"){e.preventDefault();removeReason(r.id);commit();renderSide();renderVenn()}
+    else if(e.key==="Enter"){e.preventDefault();editReason(r)}
+    else if(/^[1-5]$/.test(e.key)){setPri(r,+e.key);commit();renderSide();renderVenn()}
+  }
+
+  document.getElementById("mayoiBtn").onclick=()=>place();
+  setTimeout(()=>{try{renderFrames();paintMarks()}catch(e){}},0);   /* 起動時：本体の最初の描画のあとで枠を出す */
+  return {
+    open:(d,i)=>open(d,i),close,paintMarks,place,drawLines,
+    isOpen:()=>isOpen,
+    onHostRender(){paintMarks();try{renderFrames()}catch(e){}
+      if(isOpen&&!ie&&!(document.activeElement&&root.contains(document.activeElement)&&document.activeElement.tagName==="TEXTAREA")){
+        try{renderAll()}catch(e){}
+      }}
+  };
 })();
 })();
 </script>
