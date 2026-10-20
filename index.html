@@ -11,6 +11,62 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
 <title>ATOZUKE / 後づけマップ</title>
+<script>
+/* 🎨 デザインの着せ替え。見た目（html の class）だけ変える。札・データ・同期には一切さわらない。
+   この端末だけに覚える（atozuke.theme）。先に当てておくので、開いた瞬間にチラつかない。 */
+(function(){
+  var T=[
+    {id:"neon",  name:"ネオン",     sub:"いまの形。光る線とピンク",       bar:"#07070d", bg:"#07070d", top:"#ff2e97", card:"#14142a", a:"#00e5ff", r:"5px",  sh:"0 0 10px -2px #ff2e97"},
+    {id:"calm",  name:"落ち着いた", sub:"墨と金。明朝で静か・光らない",   bar:"#16130f", bg:"#16130f", top:"#d0623f", card:"#221d17", a:"#c4a052", r:"2px",  sh:"0 4px 8px rgba(0,0,0,.5)"},
+    {id:"simple",name:"すっきり",   sub:"グレーで平ら。余計な飾りなし",   bar:"#18181b", bg:"#18181b", top:"#8b93ff", card:"#26262b", a:"#8b93ff", r:"6px",  sh:"0 2px 6px rgba(0,0,0,.4)"},
+    {id:"paper", name:"紙",         sub:"明るい方眼ノートに赤ペン",       bar:"#f3eee3", bg:"#f3eee3", top:"#c4442e", card:"#fffdf8", a:"#2f5fa7", r:"2px",  sh:"0 2px 5px rgba(90,70,40,.2)", light:1},
+    {id:"soft",  name:"やわらか",   sub:"空色で丸い札。目にやさしい",     bar:"#eef2fb", bg:"#eef2fb", top:"#e0508c", card:"#ffffff", a:"#4a78e8", r:"9px",  sh:"0 3px 8px rgba(60,80,140,.18)", light:1}
+  ];
+  var KEY="atozuke.theme";
+  function find(id){for(var i=0;i<T.length;i++)if(T[i].id===id)return T[i];return T[0];}
+  function apply(id,keep){
+    var t=find(id),h=document.documentElement;
+    h.setAttribute("data-theme",t.id);
+    h.classList.toggle("th",t.id!=="neon");
+    h.classList.toggle("light",!!t.light);
+    var m=document.querySelector('meta[name="theme-color"]'); if(m)m.setAttribute("content",t.bar);
+    if(keep){try{localStorage.setItem(KEY,t.id)}catch(e){}}
+    var pop=document.getElementById("themePop");
+    if(pop)[].forEach.call(pop.querySelectorAll(".tpo"),function(b){b.classList.toggle("on",b.dataset.t===t.id)});
+  }
+  var cur="neon"; try{cur=localStorage.getItem(KEY)||"neon"}catch(e){}
+  apply(cur,false);
+
+  document.addEventListener("DOMContentLoaded",function(){
+    var btn=document.getElementById("themeBtn"); if(!btn)return;
+    var pop=document.createElement("div"); pop.id="themePop";
+    pop.innerHTML='<div class="tph">🎨 デザイン（見た目だけ変わる。中身はそのまま）</div>'+T.map(function(t){
+      return '<button class="tpo" data-t="'+t.id+'">'+
+        '<span class="pv" style="background:'+t.bg+';--pa:'+t.a+';--pr:'+t.r+';--psh:'+t.sh+'">'+
+          '<b style="background:'+t.top+'"></b><i style="background:'+t.card+'"></i></span>'+
+        '<span><div class="tn">'+t.name+'</div><div class="ts">'+t.sub+'</div></span></button>';
+    }).join("");
+    document.body.appendChild(pop);
+    var c0="neon"; try{c0=localStorage.getItem(KEY)||"neon"}catch(e){}
+    apply(c0,false);
+    btn.addEventListener("click",function(e){
+      e.stopPropagation();
+      var r=btn.getBoundingClientRect();              /* ボタンの真下に出す（はみ出すなら右端に寄せる） */
+      pop.style.left=Math.max(10,Math.min(r.left,innerWidth-pop.offsetWidth-10,innerWidth-310))+"px";
+      pop.style.top=(r.bottom+6)+"px";
+      pop.classList.toggle("open");
+    });
+    pop.addEventListener("click",function(e){
+      var b=e.target.closest(".tpo"); if(!b)return;
+      e.stopPropagation(); apply(b.dataset.t,true);
+    });
+    document.addEventListener("pointerdown",function(e){
+      if(pop.classList.contains("open")&&!pop.contains(e.target)&&e.target!==btn&&!btn.contains(e.target))pop.classList.remove("open");
+    },true);
+    document.addEventListener("keydown",function(e){if(e.key==="Escape")pop.classList.remove("open");});
+  });
+})();
+</script>
 <style>
   :root{
     --bg:#07070d; --panel:#0f0f1a; --line:#2a2a4a; --text:#e6f1ff;
@@ -528,6 +584,7 @@
 
 <div id="toolbar">
   <span class="title">ATOZUKE <small id="ver"></small> <small id="saved"></small></span>
+  <button id="themeBtn" title="デザインを変える（見た目だけ）">🎨</button>
   <button id="undoBtn" title="取り消し ⌘Z">↩︎</button>
   <button id="redoBtn" title="やり直し ⇧⌘Z">↪︎</button>
   <button id="addBtn" class="primary">＋<span class="lbl">札</span></button>
@@ -891,6 +948,281 @@
     #myo .pri button{width:19px;height:19px}
   }
 </style>
+<style id="themeCss">
+/* ===== 🎨 デザインの着せ替え（見た目だけ。機能・データには一切さわらない） =====
+   neon＝いまの形（何も上書きしない）。ほかの4つは html.th に色・形の変数を置いて上からかぶせる。
+   html.light は明るい紙のときだけ足す直し（白地で見えなくなる文字・線の色）。 */
+html[data-theme=calm]{
+  --bg:#16130f; --panel:#1e1a15; --line:#3a3229; --text:#ece2d0; --muted:#9a8c77;
+  --mag:#d0623f; --cyan:#c4a052; --gold:#d9ae55; --warn:#e2553f; --plain:#a3967f;
+  --bar:rgba(23,20,15,.96); --field:#120f0b; --btn:#221d17; --btnh:#2c251d; --card:#221d17; --card2:#1b1712;
+  --grn:#9cc27a; --halo:#16130f; --on:#fff;
+  --font:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;
+  --mono:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;
+  --r:3px; --rb:3px; --rf:3px; --rm:4px;
+  --cardsh:0 8px 18px rgba(0,0,0,.5); --popsh:0 14px 40px rgba(0,0,0,.6);
+  --stage:linear-gradient(rgba(196,160,82,.035) 1px,transparent 1px) 0 0/44px 44px,
+          linear-gradient(90deg,rgba(196,160,82,.035) 1px,transparent 1px) 0 0/44px 44px,
+          radial-gradient(ellipse 90% 70% at 50% -10%,#241d14 0%,#16130f 70%);
+}
+html[data-theme=simple]{
+  --bg:#18181b; --panel:#212125; --line:#323238; --text:#ececf1; --muted:#8d8d98;
+  --mag:#8b93ff; --cyan:#8b93ff; --gold:#e9b45c; --warn:#ff6b6b; --plain:#8d8d98;
+  --bar:rgba(24,24,27,.95); --field:#121214; --btn:#26262b; --btnh:#303036; --card:#242428; --card2:#242428;
+  --grn:#5fd38a; --halo:#18181b; --on:#0e0e14;
+  --font:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+  --mono:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+  --r:10px; --rb:8px; --rf:8px; --rm:12px;
+  --cardsh:0 1px 2px rgba(0,0,0,.45),0 6px 16px rgba(0,0,0,.25); --popsh:0 12px 34px rgba(0,0,0,.5);
+  --stage:radial-gradient(circle,#2d2d33 1px,transparent 1.7px) 0 0/22px 22px,#18181b;
+}
+html[data-theme=paper]{
+  --bg:#f3eee3; --panel:#fbf8f1; --line:#d9cfbc; --text:#2b261f; --muted:#857a68;
+  --mag:#c4442e; --cyan:#2f5fa7; --gold:#a8700c; --warn:#c0392b; --plain:#8a7f6c;
+  --bar:rgba(250,246,238,.96); --field:#fffdf8; --btn:#fffdf8; --btnh:#f0e9da; --card:#fffdf8; --card2:#fbf6ec;
+  --grn:#2f8a4c; --halo:#f3eee3; --on:#fff;
+  --font:"Hiragino Sans","Noto Sans JP",sans-serif;
+  --mono:"Hiragino Sans","Noto Sans JP",sans-serif;
+  --title:"Hiragino Mincho ProN","Yu Mincho",serif;
+  --r:3px; --rb:4px; --rf:4px; --rm:6px;
+  --cardsh:0 1px 0 rgba(0,0,0,.04),0 3px 9px rgba(90,70,40,.14); --popsh:0 12px 34px rgba(90,70,40,.22);
+  --stage:linear-gradient(rgba(47,95,167,.09) 1px,transparent 1px) 0 0/22px 22px,
+          linear-gradient(90deg,rgba(47,95,167,.09) 1px,transparent 1px) 0 0/22px 22px,#f3eee3;
+}
+html[data-theme=soft]{
+  --bg:#eef2fb; --panel:#ffffff; --line:#d6def0; --text:#27304a; --muted:#7a86a6;
+  --mag:#e0508c; --cyan:#4a78e8; --gold:#d98f10; --warn:#e5484d; --plain:#8e99b9;
+  --bar:rgba(255,255,255,.92); --field:#f7f9ff; --btn:#ffffff; --btnh:#eef3ff; --card:#ffffff; --card2:#f8faff;
+  --grn:#23a35a; --halo:#eef2fb; --on:#fff;
+  --font:"Hiragino Maru Gothic ProN","Hiragino Sans","Noto Sans JP",sans-serif;
+  --mono:"Hiragino Maru Gothic ProN","Hiragino Sans","Noto Sans JP",sans-serif;
+  --r:14px; --rb:999px; --rf:10px; --rm:16px;
+  --cardsh:0 2px 4px rgba(60,80,140,.06),0 8px 22px rgba(60,80,140,.13); --popsh:0 14px 40px rgba(60,80,140,.2);
+  --stage:radial-gradient(circle,rgba(74,120,232,.17) 1.2px,transparent 1.9px) 0 0/22px 22px,
+          linear-gradient(160deg,#eaf1ff 0%,#f6f0ff 100%);
+}
+
+/* ---- 共通（ネオン以外） ---- */
+html.th,html.th body{background:var(--bg);color:var(--text);font-family:var(--font);}
+html.th #toolbar{background:var(--bar);border-bottom-color:var(--line);box-shadow:0 1px 0 var(--line);}
+html.th #toolbar .title{color:var(--mag);text-shadow:none;font-family:var(--title,var(--mono));}
+html.th #toolbar .title small{color:var(--muted);}
+html.th button{background:var(--btn);border-color:var(--line);color:var(--text);border-radius:var(--rb);
+  font-family:var(--mono);box-shadow:none;}
+html.th button:hover{background:var(--btnh);border-color:var(--cyan);color:var(--text);box-shadow:none;}
+html.th button.primary{background:var(--mag);border-color:var(--mag);color:var(--on);box-shadow:none;}
+html.th button.primary:hover{filter:brightness(1.08);}
+html.th button.gold{background:color-mix(in srgb,var(--gold) 18%,var(--btn));border-color:var(--gold);color:var(--text);box-shadow:none;}
+html.th button.on{border-color:var(--gold);color:var(--text);box-shadow:inset 0 0 0 1px var(--gold);}
+html.th input[type=text],html.th textarea,html.th select{background:var(--field);border-color:var(--line);
+  color:var(--text);border-radius:var(--rf);}
+html.th input[type=text]:focus,html.th textarea:focus{border-color:var(--cyan);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--cyan) 20%,transparent);}
+
+html.th #tabbar,html.th #tagbar{background:var(--bar);border-bottom-color:var(--line);color:var(--muted);font-family:var(--mono);}
+html.th .tab{background:var(--btn);border-color:var(--line);color:var(--muted);border-radius:var(--rb);font-family:var(--mono);}
+html.th .tab.on{color:var(--text);border-color:var(--gold);background:color-mix(in srgb,var(--gold) 14%,var(--btn));box-shadow:none;}
+html.th .tab .nm.edit{color:var(--text);}
+html.th .tab.day{border-color:color-mix(in srgb,var(--grn) 40%,var(--line));background:color-mix(in srgb,var(--grn) 7%,var(--btn));}
+html.th .tab.day .nm{color:var(--grn);}
+html.th .tab.day.on{border-color:var(--grn);background:color-mix(in srgb,var(--grn) 16%,var(--btn));box-shadow:none;color:var(--text);}
+html.th .tab.more{color:var(--grn);}
+html.th .tabsep{color:var(--grn);border-left-color:var(--line);}
+html.th .tagbtn{background:var(--btn);border-color:var(--line);color:var(--muted);font-family:var(--mono);}
+html.th .tagbtn:hover{color:var(--text);}
+html.th .tagbtn.on{background:color-mix(in srgb,var(--mag) 16%,var(--btn));border-color:var(--mag);color:var(--text);box-shadow:none;}
+html.th #subMenu{background:var(--panel);border-color:var(--line);box-shadow:var(--popsh);border-radius:var(--rm);}
+html.th #subMenu .t,html.th #subMenu .d{color:var(--muted);font-family:var(--mono);}
+html.th #subMenu button.cur{background:color-mix(in srgb,var(--gold) 14%,var(--btn));color:var(--text);box-shadow:none;}
+
+html.th #stage{background:var(--stage);}
+html.th svg#links .lkt,html.th svg#links .vwt{stroke:var(--halo);font-family:var(--mono);}
+html.th #lkEd{background:var(--field);color:var(--text);border-color:var(--mag);box-shadow:var(--popsh);}
+
+/* 札 */
+html.th .node{background:linear-gradient(170deg,var(--card) 0%,var(--card2) 100%);
+  border-top-color:var(--line);border-right-color:var(--line);border-bottom-color:var(--line);
+  border-radius:var(--r);color:var(--text);box-shadow:var(--cardsh);font-family:var(--font);}
+html.th .node:hover{border-top-color:color-mix(in srgb,var(--cyan) 55%,var(--line));
+  border-right-color:color-mix(in srgb,var(--cyan) 55%,var(--line));border-bottom-color:color-mix(in srgb,var(--cyan) 55%,var(--line));}
+html.th .node.selected{box-shadow:0 0 0 2px var(--c,var(--plain)),var(--cardsh);}
+html.th .node.plain{background:color-mix(in srgb,var(--card2) 75%,var(--bg));border-left-color:var(--plain);}
+html.th .node.rev{box-shadow:0 0 0 3px var(--gold),var(--cardsh);}
+html.th .node.grab{box-shadow:0 0 0 2px var(--gold),var(--cardsh)!important;}
+html.th .node.start{background:linear-gradient(170deg,color-mix(in srgb,var(--st) 18%,var(--card)) 0%,var(--card) 100%)!important;
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--st) 16%,transparent),var(--cardsh);}
+html.th .node.start.selected{box-shadow:0 0 0 4px color-mix(in srgb,var(--st) 40%,transparent),var(--cardsh);}
+html.th .node.king{border-radius:0;}
+html.th .node.start{border-radius:30px;}
+html.th .node .head{font-family:var(--mono);}
+html.th .node.plain .head{color:var(--muted);}
+html.th .node .txt[contenteditable]{outline-color:var(--cyan);}
+html.th .node .txt.ph{color:var(--muted);}
+html.th .chip{background:color-mix(in srgb,var(--cyan) 12%,transparent);color:var(--cyan);
+  border-color:color-mix(in srgb,var(--cyan) 40%,transparent);font-family:var(--mono);}
+html.th .node .memo{color:var(--muted);border-top-color:var(--line);}
+html.th .grow{background:var(--card);box-shadow:none;}
+html.th .grow:hover{background:var(--c,var(--plain));color:var(--card);box-shadow:none;}
+html.th .node .ck{border-color:var(--grn);color:var(--grn);background:var(--card);box-shadow:0 0 0 2px var(--card);}
+html.th .node .ck:hover{background:color-mix(in srgb,var(--grn) 22%,var(--card));}
+html.th .node .ck.on{background:var(--grn);color:var(--card);}
+html.th .node.done{border-left-color:var(--grn);box-shadow:inset 3px 0 0 var(--grn),var(--cardsh);}
+html.th .node .cnt{color:var(--grn);}
+html.th .node .gk{color:var(--muted);}
+html.th .node .gk .gkdone{color:var(--muted);}
+html.th .node > .myb{background:var(--card);box-shadow:none;}
+html.th .node.droptarget{box-shadow:0 0 0 2px var(--cyan),var(--cardsh);}
+
+/* 右の設定・下のバー・小窓 */
+html.th #insp{background:var(--panel);border-left-color:var(--line);box-shadow:-10px 0 28px -16px rgba(0,0,0,.4);}
+html.th #insp h3{color:var(--mag);font-family:var(--mono);}
+html.th #insp .path{color:var(--muted);}
+html.th #insp .path b{color:var(--text);}
+html.th #inspGrip{background:var(--panel);}
+html.th #inspGrip .bar{background:var(--mag);box-shadow:none;}
+html.th .rolebtn{background:var(--btn);border-color:var(--line);border-radius:var(--rb);font-family:var(--mono);color:var(--text);}
+html.th .subtle{color:var(--muted);font-family:var(--mono);}
+html.th #review{background:var(--panel);box-shadow:0 -10px 30px -16px rgba(0,0,0,.4);}
+html.th #review .q{font-family:var(--mono);}
+html.th #review .card .ctx{color:var(--muted);font-family:var(--mono);}
+html.th .pick{background:var(--btn);border-color:var(--line);border-radius:var(--rb);font-family:var(--mono);color:var(--text);}
+html.th .pick:hover{color:var(--text);background:var(--btnh);}
+html.th .pick .hint{color:var(--muted);}
+html.th #mask{background:rgba(0,0,0,.5);}
+html.th .modal{background:var(--panel);border-color:var(--line);border-radius:var(--rm);box-shadow:var(--popsh)!important;}
+html.th .modal h2{font-family:var(--mono);}
+html.th .modal .cap{color:var(--muted);font-family:var(--mono);}
+html.th .rrow{border-top-color:var(--line);}
+html.th .rrow .nm .ex{color:var(--muted);}
+html.th #roleForm{border-color:var(--line);}
+html.th #roleForm label,html.th #roleForm .prevbox{color:var(--muted);font-family:var(--mono);}
+html.th .cat{background:var(--btn);border-color:var(--line);color:var(--muted);font-family:var(--mono);}
+html.th .cat:hover,html.th .cat.on{color:var(--text);box-shadow:none;}
+html.th .picker{background:var(--field);border-color:var(--line);}
+html.th .picker .e:hover{background:var(--btnh);}
+html.th .picker .e.on{background:color-mix(in srgb,var(--mag) 18%,var(--field));box-shadow:none;}
+html.th .sw .c.on{border-color:var(--text);}
+html.th #rfPick{background:var(--field);border-color:var(--line);}
+html.th .ask{background:var(--btn);border-color:var(--line);color:var(--muted);font-family:var(--mono);}
+html.th .ask:hover{color:var(--text);}
+html.th .ask.on{background:color-mix(in srgb,var(--mag) 16%,var(--btn));border-color:var(--mag);color:var(--text);box-shadow:none;}
+html.th #calHead .big,html.th .calrow .d{color:var(--grn);font-family:var(--mono);}
+html.th #calHead .sub,html.th .calgap,html.th .calrow .c{color:var(--muted);}
+html.th .calrow{background:var(--field);border-color:var(--line);}
+html.th .calrow:hover{border-color:var(--grn);background:color-mix(in srgb,var(--grn) 7%,var(--field));}
+html.th .calrow.today{border-color:var(--grn);box-shadow:none;}
+html.th .calrow .t{color:var(--text);}
+html.th .calrow .v{color:var(--muted);}
+html.th .calpick{border-top-color:var(--line);}
+html.th #hint{background:var(--bar);border-color:var(--line);color:var(--muted);font-family:var(--mono);border-radius:var(--rb);}
+html.th #toast{background:var(--panel);border-color:var(--line);color:var(--text);box-shadow:var(--popsh);font-family:var(--mono);border-radius:var(--rm);}
+html.th #edbar{background:var(--panel);border-color:var(--line);box-shadow:var(--popsh);font-family:var(--mono);border-radius:var(--rm);}
+html.th #edbar .row+.row{border-top-color:var(--line);}
+html.th #edbar .eb{background:var(--btn);border-color:var(--line);color:var(--text);border-radius:var(--rb);}
+html.th #edbar .eb:hover{background:var(--btnh);border-color:var(--cyan);color:var(--text);}
+html.th #edbar .eb b,html.th #edbar .lab{color:var(--muted);}
+html.th #edbar .eb.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,var(--line));}
+html.th #pairbar,html.th #vsbar{background:var(--panel);color:var(--text);box-shadow:var(--popsh);font-family:var(--mono);}
+html.th #pairbar b,html.th #vsbar b{color:var(--text);}
+html.th #ulpop{background:var(--panel);color:var(--muted);border-color:var(--line);box-shadow:0 0 0 2px var(--bg),var(--popsh);font-family:var(--mono);}
+html.th #ulpop .uc{border-color:var(--bg);box-shadow:0 0 0 1px var(--line);}
+html.th #roleDump .dh,html.th #roleDump .dbody{background:var(--field);border-color:var(--line);font-family:var(--mono);}
+html.th #roleDump .drow{border-bottom-color:var(--line);}
+html.th #roleDump .drow:hover{background:var(--btnh);}
+html.th #roleDump .dno{background:color-mix(in srgb,var(--text) 10%,transparent);color:var(--text);font-family:var(--mono);}
+html.th #roleDump .dmemo{color:var(--muted);border-left-color:var(--line);}
+html.th #noteList .nrow{background:var(--field);border-color:var(--line);border-left-color:var(--mag);}
+html.th #noteList .ntx{color:var(--text);}
+html.th .lwarn{color:var(--text);}
+html.th #linkBox .lnm{color:var(--mag);}
+html.th .tool .tbody{border-color:var(--line);background:color-mix(in srgb,var(--panel) 60%,transparent);}
+html.th .tool .hr,html.th .tool .hr.big{border-top-color:var(--line);}
+html.th .tool .lb{color:var(--muted);font-family:var(--mono);}
+html.th .tool .lb.big{color:var(--text);}
+html.th .tool .kb,html.th .tool .thead,html.th .tool .tres{background:var(--panel);}
+html.th .tool .thead .lab{color:var(--muted);}
+html.th .frame .ftag{background:var(--panel);font-family:var(--mono);}
+html.th .frame .fnote{text-shadow:0 0 6px var(--bg),0 0 2px var(--bg);}
+
+/* ⚖ 迷い地図の画面 */
+html.th #myo{background:var(--bg);color:var(--text);font-family:var(--font);}
+html.th #myo .mybar{background:var(--bar);border-bottom-color:var(--line);}
+html.th #myo .myttl{color:var(--mag);text-shadow:none;font-family:var(--title,var(--mono));}
+html.th #myo .myttl small,html.th #myo .rlabel,html.th #myo .myhint{color:var(--muted);}
+html.th #myo .mytabs{border-bottom-color:var(--line);}
+html.th #myo .mytab{background:var(--btn);border-color:var(--line);color:var(--muted);border-radius:var(--rb);font-family:var(--mono);}
+html.th #myo .mytab.on{color:var(--text);background:color-mix(in srgb,var(--gold) 14%,var(--btn));box-shadow:none;}
+html.th #myo .myside{border-right-color:var(--line);}
+html.th #myo .sec{background:var(--panel);border-color:var(--line);border-radius:var(--rm);}
+html.th #myo .sec h2{font-family:var(--mono);}
+html.th #myo .sec h2 small{color:var(--muted);font-family:var(--font);}
+html.th #myo .sec.worry{border-color:var(--mag);background:color-mix(in srgb,var(--mag) 7%,var(--panel));box-shadow:none;}
+html.th #myo .sec.worry h2{text-shadow:none;}
+html.th #my-worry{background:var(--field);border-color:color-mix(in srgb,var(--mag) 45%,var(--line));}
+html.th #myo .sec.opt,html.th #myo .sec.ans{box-shadow:none;}
+html.th #myo .sec.opt .optin{color:var(--text);}
+html.th #myo .pri button{background:var(--field);}
+html.th #myo .mystage{background:var(--stage);}
+html.th #myo textarea.ie{background:var(--field);color:var(--text);}
+html.th #myo .mytoast,html.th #myo .mymenu,html.th #my-fmenu,html.th #myo .myai .box{background:var(--panel);color:var(--text);box-shadow:var(--popsh);}
+html.th #myo .mymenu .cq{color:var(--muted);}
+html.th #myo .mymenu .cq b{color:var(--text);}
+html.th #my-pick{background:var(--panel);color:var(--text);box-shadow:var(--popsh);}
+html.th .myfr{background:color-mix(in srgb,var(--panel) 94%,transparent);box-shadow:var(--cardsh);border-radius:var(--rm);}
+html.th .myfr .myfh{color:var(--gold);}
+html.th .myfr .myfh b{color:var(--text);}
+html.th .myfr .myff{color:var(--grn);}
+html.th .myfr .myff.empty{color:var(--muted);}
+
+/* ---- 明るいデザインだけの直し（白地で消える色） ---- */
+html.light .node .head{color:color-mix(in srgb,var(--c,var(--plain)) 62%,#1d1d1d);}
+html.light .node.plain .head{color:var(--muted);}
+html.light .rolebtn{color:var(--text)!important;}
+/* ▶ スタートの色（既定は黄緑）を、落ち着いた・明るい紙ではなじむ濃さにする。色そのものは札ごとのまま */
+html[data-theme=calm] .node.start{border-color:color-mix(in srgb,var(--st) 60%,var(--card));}
+html[data-theme=calm] .node.start .head{color:color-mix(in srgb,var(--st) 70%,var(--text));}
+html[data-theme=calm] .node.start .stb{background:color-mix(in srgb,var(--st) 60%,var(--card));}
+html.light .node.start{border-color:color-mix(in srgb,var(--st) 70%,#2a2a2a);}
+html.light .node.start .stb{background:color-mix(in srgb,var(--st) 75%,#2a2a2a);color:#fff;}
+html.light .node.start .head{color:color-mix(in srgb,var(--st) 55%,#1d1d1d);}
+html.light .node.king{box-shadow:0 0 22px -4px color-mix(in srgb,var(--c,var(--gold)) 55%,transparent),var(--cardsh);}
+html.light .node .mirb{color:#6b3fb8;background:rgba(197,140,255,.18);box-shadow:none;}
+html.light .node .gk .gki.on .gkl{color:var(--text);}
+html.light svg#links{filter:saturate(1.25) brightness(.8);}
+html.light svg#links .lkt{fill:var(--mag);}
+html.light #mask{background:rgba(40,40,60,.28);}
+html.light #cal h2{color:var(--grn)!important;}
+html.light #mir h2{color:#7b4fd0!important;}
+html.light .modal{border-color:var(--line)!important;}
+html.light #lkShowBtn.warnoff{background:color-mix(in srgb,var(--warn) 10%,var(--btn));}
+html.light ::highlight(ul0){text-decoration-color:#d9a400;}
+html.light ::highlight(ul2){text-decoration-color:#1597b8;}
+html.light ::highlight(ul3){text-decoration-color:#2fa85a;}
+html.light ::highlight(ul5){text-decoration-color:#2b2b2b;}
+html.light #my-venn,html.light .myfr svg{filter:saturate(1.2) brightness(.82);}
+html.light #my-venn text[fill="#dfe8ff"],html.light #my-venn text[fill="#fff"]{fill:#1d2238;}
+html.light #my-venn text[fill="#e9ffef"],html.light .myfr svg text[fill="#e9ffef"]{fill:#174d2b;}
+html.light #my-venn .rg:hover .lt{fill:#000;}
+html.light #my-venn [stroke="#fff"]{stroke:#1d2238;}
+
+/* ---- 🎨 えらぶ小窓（どのデザインでも同じ形） ---- */
+#themePop{position:fixed;left:10px;top:calc(52px + var(--sat));z-index:70;display:none;flex-direction:column;gap:7px;
+  width:min(300px,calc(100vw - 20px));padding:10px;border-radius:10px;
+  background:var(--panel);border:1px solid var(--line);box-shadow:0 16px 44px rgba(0,0,0,.45);color:var(--text);}
+#themePop.open{display:flex;}
+#themePop .tph{font-size:11px;color:var(--muted);padding:0 2px 2px;}
+#themePop .tpo{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:7px;border-radius:8px;
+  cursor:pointer;border:1.5px solid transparent;}
+#themePop .tpo:hover{background:color-mix(in srgb,var(--text) 7%,transparent);}
+#themePop .tpo.on{border-color:var(--gold);}
+#themePop .pv{flex:none;width:76px;height:46px;border-radius:6px;position:relative;overflow:hidden;
+  border:1px solid rgba(128,128,128,.35);}
+#themePop .pv i{position:absolute;left:10px;top:12px;width:44px;height:20px;border-radius:var(--pr);
+  border-left:4px solid var(--pa);box-shadow:var(--psh);}
+#themePop .pv b{position:absolute;left:0;right:0;top:0;height:7px;}
+#themePop .tn{font-size:13px;font-weight:700;}
+#themePop .ts{font-size:10.5px;color:var(--muted);margin-top:2px;line-height:1.4;}
+</style>
 <div id="myo" data-pane="side">
   <div class="myrs" id="my-rs" title="引くと小さくなって、後ろの紙が見える（小さくしすぎると枠に戻る）。ダブルクリックで全画面／窓を切り替え"></div>
   <div class="mybar">
@@ -959,7 +1291,7 @@
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.52.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.53.0";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
