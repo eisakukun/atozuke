@@ -1291,7 +1291,7 @@ html.light #my-venn [stroke="#fff"]{stroke:#1d2238;}
    1) まず型なしで自由に書く   2) あとから「何を出したかった札か」を貼る
    3) AIに渡せる1本の文に書き出す
    ========================================================= */
-const VER="v1.53.0";                       // 直したら上げる。version.txt と必ず同じにする
+const VER="v1.53.1";                       // 直したら上げる。version.txt と必ず同じにする
 const STORE="atozuke.v1";
 const GRID=22;
 let zAnim=null,zRaf=0;                     // ホイール拡大のなめらか移動（下の zStep）
@@ -2975,6 +2975,19 @@ function wireNode(el){
     });
     grow.addEventListener("pointermove",e=>{
       if(!growing)return;
+      if(e.pointerType==="touch"&&startPt&&Math.hypot(e.clientX-startPt.x,e.clientY-startPt.y)>10){
+        /* 指で＋の上から動かした＝札を伸ばすのではなく、画面をスクロール（パン）したい。パンに引き渡す */
+        cancel();
+        try{grow.releasePointerCapture(e.pointerId);}catch(err){}
+        pts.set(e.pointerId,{x:startPt.x,y:startPt.y});
+        try{stage.setPointerCapture(e.pointerId);}catch(err){}
+        stage.classList.add("panning");
+        tapInfo=null;beginGesture();
+        pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+        const a=[...pts.values()];
+        if(gest&&gest.k===1&&a.length===1){state.view.x=gest.vx+(a[0].x-gest.sx);state.view.y=gest.vy+(a[0].y-gest.sy);applyView();}
+        return;
+      }
       const src=state.nodes[el.dataset.id],A=boxOf(src),p=toWorld(e.clientX,e.clientY);
       const c=colorOf(src);
       const q=edgePoint(A,p.x,p.y),k=Math.max(46,Math.hypot(p.x-q.x,p.y-q.y)*.4);
